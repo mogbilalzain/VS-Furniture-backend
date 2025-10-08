@@ -1,0 +1,16 @@
+<svg width="100" height="100" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+  <!-- GREENGUARD Background -->
+  <rect width="100" height="100" fill="#FFD700" rx="10"/>
+  
+  <!-- Shield shape -->
+  <path d="M50 10 L75 25 L75 60 C75 70, 65 85, 50 90 C35 85, 25 70, 25 60 L25 25 Z" fill="white" stroke="#FFD700" stroke-width="2"/>
+  
+  <!-- GREENGUARD text -->
+  <text x="50" y="30" font-family="Arial, sans-serif" font-size="6" font-weight="bold" text-anchor="middle" fill="#228B22">GREENGUARD</text>
+  
+  <!-- GOLD text -->
+  <text x="50" y="45" font-family="Arial, sans-serif" font-size="8" font-weight="bold" text-anchor="middle" fill="#FFD700">GOLD</text>
+  
+  <!-- Star -->
+  <path d="M50 55 L52 61 L58 61 L53 65 L55 71 L50 67 L45 71 L47 65 L42 61 L48 61 Z" fill="#FFD700"/>
+</svg>

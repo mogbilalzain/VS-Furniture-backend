@@ -1,0 +1,13 @@
+<svg width="100" height="100" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+  <!-- Test Certification Background -->
+  <rect width="100" height="100" fill="#4CAF50" rx="10"/>
+  
+  <!-- Test Text */
+  <text x="50" y="30" font-family="Arial, sans-serif" font-size="12" font-weight="bold" text-anchor="middle" fill="white">TEST</text>
+  
+  <!-- Certification Text -->
+  <text x="50" y="50" font-family="Arial, sans-serif" font-size="8" text-anchor="middle" fill="white">CERTIFICATION</text>
+  
+  <!-- Check mark -->
+  <path d="M25 65 L35 75 L75 35" stroke="white" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
