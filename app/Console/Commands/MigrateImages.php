@@ -413,3 +413,8 @@ class MigrateImages extends Command
     }
 }
 
+
+
+
+
+

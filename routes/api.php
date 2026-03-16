@@ -19,6 +19,7 @@ use App\Http\Controllers\Api\ProductMaterialController;
 use App\Http\Controllers\Api\SolutionController;
 use App\Http\Controllers\Api\HomepageContentController;
 use App\Http\Controllers\Api\DashboardController;
+use App\Http\Controllers\Api\ImportController;
 
 /*
 |--------------------------------------------------------------------------
@@ -205,5 +206,14 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::delete('/admin/homepage-content/{id}', [HomepageContentController::class, 'destroy']);
         Route::post('/admin/homepage-content/reorder', [HomepageContentController::class, 'reorder']);
         Route::post('/admin/homepage-content/upload-video', [HomepageContentController::class, 'uploadVideo']);
+        
+        // Bulk Import Routes
+        Route::prefix('import')->group(function () {
+            Route::post('/validate', [ImportController::class, 'validateImport']);
+            Route::post('/products', [ImportController::class, 'importProducts']);
+            Route::get('/logs', [ImportController::class, 'getImportLogs']);
+            Route::get('/logs/{id}', [ImportController::class, 'getImportLogDetails']);
+            Route::get('/template', [ImportController::class, 'downloadTemplate']);
+        });
     });
 }); 

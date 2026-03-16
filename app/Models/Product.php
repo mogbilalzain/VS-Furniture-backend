@@ -17,6 +17,7 @@ class Product extends Model
         'short_description',
         'specifications',
         'model',
+        'sku',
         'category_id',
         'status',
         'is_featured',
