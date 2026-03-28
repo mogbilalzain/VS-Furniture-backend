@@ -7,6 +7,7 @@ use Illuminate\Support\Facades\Log;
 class ZipExtractorService
 {
     const ALLOWED_EXTENSIONS = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'];
+    const PDF_EXTENSIONS = ['pdf'];
 
     /**
      * Scan ZIP structure without extracting content.
@@ -26,6 +27,7 @@ class ZipExtractorService
             }
 
             $images = [];
+            $pdfFiles = [];
 
             for ($i = 0; $i < $zip->numFiles; $i++) {
                 $stat = $zip->statIndex($i);
@@ -37,27 +39,37 @@ class ZipExtractorService
 
                 $extension = strtolower(pathinfo($filename, PATHINFO_EXTENSION));
 
-                if (!in_array($extension, self::ALLOWED_EXTENSIONS)) {
-                    continue;
+                if (in_array($extension, self::ALLOWED_EXTENSIONS)) {
+                    $images[] = [
+                        'index' => $i,
+                        'original_name' => basename($filename),
+                        'name_without_ext' => pathinfo(basename($filename), PATHINFO_FILENAME),
+                        'extension' => $extension,
+                        'size' => $stat['size'],
+                    ];
+                } elseif (in_array($extension, self::PDF_EXTENSIONS)) {
+                    $baseName = pathinfo(basename($filename), PATHINFO_FILENAME);
+                    $pdfFiles[] = [
+                        'index' => $i,
+                        'original_name' => basename($filename),
+                        'name_without_ext' => $baseName,
+                        'extension' => $extension,
+                        'size' => $stat['size'],
+                        'detected_category' => $this->detectFileCategory($baseName),
+                    ];
                 }
-
-                $images[] = [
-                    'index' => $i,
-                    'original_name' => basename($filename),
-                    'name_without_ext' => pathinfo(basename($filename), PATHINFO_FILENAME),
-                    'extension' => $extension,
-                    'size' => $stat['size'],
-                ];
             }
 
             $zip->close();
 
-            Log::info("Scanned ZIP structure: " . count($images) . " images found");
+            Log::info("Scanned ZIP structure: " . count($images) . " images, " . count($pdfFiles) . " PDFs found");
 
             return [
                 'success' => true,
                 'images' => $images,
                 'total_images' => count($images),
+                'pdf_files' => $pdfFiles,
+                'total_pdfs' => count($pdfFiles),
             ];
         } catch (\Exception $e) {
             Log::error('ZIP scan failed', ['error' => $e->getMessage(), 'file' => $zipPath]);
@@ -213,6 +225,105 @@ class ZipExtractorService
     private function nameStartsWith(string $haystack, string $needle): bool
     {
         return mb_strpos($haystack, $needle, 0, 'UTF-8') === 0;
+    }
+
+    /**
+     * Match scanned PDF metadata to products by SKU first, then by name.
+     */
+    public function matchPdfsToProducts(array $products, array $pdfFiles): array
+    {
+        $matches = [];
+
+        foreach ($products as $product) {
+            if (!empty($product['is_error'])) {
+                continue;
+            }
+
+            $productName = $product['name'];
+            $sku = $product['sku'] ?? null;
+            $matched = [];
+
+            foreach ($pdfFiles as $pdf) {
+                $pdfBaseName = $pdf['name_without_ext'];
+                $matchType = $this->getMatchType($pdfBaseName, $productName, $sku);
+
+                if (!$matchType) {
+                    continue;
+                }
+
+                $matched[] = array_merge($pdf, [
+                    'match_type' => $matchType,
+                ]);
+            }
+
+            if (!empty($matched)) {
+                $matches[$productName] = $matched;
+            }
+        }
+
+        Log::info("Matched PDFs for " . count($matches) . " products");
+
+        return $matches;
+    }
+
+    /**
+     * Extract a single PDF by its index inside the ZIP.
+     */
+    public function extractSinglePdf(string $zipPath, int $index): ?array
+    {
+        $zip = new \ZipArchive;
+
+        if ($zip->open($zipPath) !== true) {
+            return null;
+        }
+
+        $stat = $zip->statIndex($index);
+        if (!$stat) {
+            $zip->close();
+            return null;
+        }
+
+        $content = $zip->getFromIndex($index);
+        $zip->close();
+
+        if ($content === false) {
+            return null;
+        }
+
+        $filename = basename($stat['name']);
+
+        return [
+            'original_name' => $filename,
+            'extension' => strtolower(pathinfo($filename, PATHINFO_EXTENSION)),
+            'content' => $content,
+            'size' => strlen($content),
+        ];
+    }
+
+    /**
+     * Detect file_category from the PDF filename suffix.
+     */
+    public function detectFileCategory(string $baseName): string
+    {
+        $lower = mb_strtolower($baseName);
+
+        $patterns = [
+            'catalog'       => ['catalog', 'cat'],
+            'manual'        => ['manual', 'man'],
+            'specification' => ['specification', 'specs', 'spec'],
+            'warranty'      => ['warranty', 'war'],
+            'installation'  => ['installation', 'install'],
+        ];
+
+        foreach ($patterns as $category => $keywords) {
+            foreach ($keywords as $kw) {
+                if (preg_match('/[-_]' . preg_quote($kw, '/') . '$/i', $lower)) {
+                    return $category;
+                }
+            }
+        }
+
+        return 'other';
     }
 
     /**

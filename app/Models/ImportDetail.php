@@ -16,12 +16,20 @@ class ImportDetail extends Model
         'error_message',
         'product_id',
         'images_uploaded',
+        'materials_assigned',
+        'certifications_assigned',
+        'properties_assigned',
+        'files_assigned',
         'matched_images',
     ];
 
     protected $casts = [
         'row_number' => 'integer',
         'images_uploaded' => 'integer',
+        'materials_assigned' => 'integer',
+        'certifications_assigned' => 'integer',
+        'properties_assigned' => 'integer',
+        'files_assigned' => 'integer',
         'matched_images' => 'array',
     ];
 

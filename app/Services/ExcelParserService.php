@@ -149,6 +149,9 @@ class ExcelParserService
             'is_featured' => $this->parseBoolean($data['is_featured'] ?? false),
             'sort_order' => $this->parseInt($data['sort_order'] ?? 0),
             'specifications' => $this->parseSpecifications($data['specifications'] ?? null),
+            'materials' => $this->parseMaterialCodes($data['materials'] ?? null),
+            'certifications' => $this->parseCertificationTitles($data['certifications'] ?? null),
+            'properties' => $this->parseProperties($data['properties'] ?? null),
             'is_error' => false,
         ];
     }
@@ -194,6 +197,59 @@ class ExcelParserService
         }
 
         return null;
+    }
+
+    /**
+     * Parse comma-separated material codes into an array.
+     * e.g. "M030, F010, L020" => ['M030', 'F010', 'L020']
+     */
+    private function parseMaterialCodes($value): array
+    {
+        if (empty($value)) return [];
+
+        $codes = array_map('trim', explode(',', (string) $value));
+        return array_values(array_filter($codes, fn($c) => $c !== ''));
+    }
+
+    /**
+     * Parse comma-separated certification titles into an array.
+     * e.g. "GS Tested Safety, GREENGUARD Gold" => ['GS Tested Safety', 'GREENGUARD Gold']
+     */
+    private function parseCertificationTitles($value): array
+    {
+        if (empty($value)) return [];
+
+        $titles = array_map('trim', explode(',', (string) $value));
+        return array_values(array_filter($titles, fn($t) => $t !== ''));
+    }
+
+    /**
+     * Parse property-value pairs from "PropertyName:value1,value2; PropertyName2:value3" format.
+     */
+    private function parseProperties($value): array
+    {
+        if (empty($value)) return [];
+
+        $result = [];
+        $entries = array_map('trim', explode(';', (string) $value));
+
+        foreach ($entries as $entry) {
+            if (empty($entry)) continue;
+            $parts = explode(':', $entry, 2);
+            if (count($parts) !== 2) continue;
+
+            $propertyName = trim($parts[0]);
+            if (empty($propertyName)) continue;
+
+            $values = array_map('trim', explode(',', $parts[1]));
+            $values = array_values(array_filter($values, fn($v) => $v !== ''));
+
+            if (!empty($values)) {
+                $result[] = ['property' => $propertyName, 'values' => $values];
+            }
+        }
+
+        return $result;
     }
 
     private function normalizeSpecifications(array $specs): array

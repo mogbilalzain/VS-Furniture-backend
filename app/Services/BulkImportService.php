@@ -4,6 +4,12 @@ namespace App\Services;
 
 use App\Models\Product;
 use App\Models\ProductImage;
+use App\Models\ProductMaterial;
+use App\Models\Material;
+use App\Models\Certification;
+use App\Models\CategoryProperty;
+use App\Models\ProductPropertyValue;
+use App\Models\ProductFile;
 use App\Models\Category;
 use App\Models\ImportLog;
 use App\Models\ImportDetail;
@@ -63,14 +69,29 @@ class BulkImportService
 
         // Scan ZIP (metadata only)
         $imageList = [];
+        $pdfList = [];
         $matchedImages = [];
+        $matchedPdfs = [];
         if ($sessionZip) {
             $zipResult = $this->zipExtractor->scanStructure($sessionZip);
             if ($zipResult['success']) {
                 $imageList = $zipResult['images'];
                 $matchedImages = $this->zipExtractor->matchImagesToProducts($products, $imageList);
+                $pdfList = $zipResult['pdf_files'] ?? [];
+                if (!empty($pdfList)) {
+                    $matchedPdfs = $this->zipExtractor->matchPdfsToProducts($products, $pdfList);
+                }
             }
         }
+
+        // Pre-load materials keyed by code for resolution
+        $materialsByCode = Material::all()->keyBy('code');
+
+        // Pre-load certifications keyed by lowercase title for resolution
+        $certsByTitle = Certification::all()->keyBy(fn($c) => mb_strtolower($c->title));
+
+        // Pre-load category properties with values for resolution
+        $propsLookup = $this->buildPropertiesLookup();
 
         // Build preview rows
         $preview = [];
@@ -88,6 +109,14 @@ class BulkImportService
                     'status' => 'error',
                     'images_count' => 0,
                     'images' => [],
+                    'materials_count' => 0,
+                    'materials' => [],
+                    'certifications_count' => 0,
+                    'certifications' => [],
+                    'properties_count' => 0,
+                    'properties' => [],
+                    'files_count' => 0,
+                    'files' => [],
                     'error' => $p['error'],
                     'selected' => false,
                 ];
@@ -95,6 +124,41 @@ class BulkImportService
             }
 
             $images = $matchedImages[$p['name']] ?? [];
+
+            // Resolve material codes for preview
+            $materialCodes = $p['materials'] ?? [];
+            $resolvedMaterials = [];
+            $materialWarnings = [];
+            foreach ($materialCodes as $code) {
+                if ($materialsByCode->has($code)) {
+                    $mat = $materialsByCode->get($code);
+                    $resolvedMaterials[] = ['code' => $code, 'name' => $mat->name];
+                } else {
+                    $materialWarnings[] = "Material code '{$code}' not found";
+                }
+            }
+
+            // Resolve certification titles for preview
+            $certTitles = $p['certifications'] ?? [];
+            $resolvedCerts = [];
+            $certWarnings = [];
+            foreach ($certTitles as $title) {
+                $key = mb_strtolower($title);
+                if ($certsByTitle->has($key)) {
+                    $cert = $certsByTitle->get($key);
+                    $resolvedCerts[] = ['id' => $cert->id, 'title' => $cert->title];
+                } else {
+                    $certWarnings[] = "Certification '{$title}' not found";
+                }
+            }
+
+            // Resolve properties for preview
+            $parsedProps = $p['properties'] ?? [];
+            [$resolvedProps, $propWarnings] = $this->resolveProperties($parsedProps, $p['category_id'], $propsLookup);
+
+            // Matched PDFs for preview
+            $pdfs = $matchedPdfs[$p['name']] ?? [];
+
             $validCount++;
 
             $preview[] = [
@@ -110,6 +174,21 @@ class BulkImportService
                     'is_primary' => $img['is_primary'],
                     'match_type' => $img['match_type'] ?? 'name',
                 ], $images),
+                'materials_count' => count($resolvedMaterials),
+                'materials' => $resolvedMaterials,
+                'materials_warnings' => $materialWarnings,
+                'certifications_count' => count($resolvedCerts),
+                'certifications' => $resolvedCerts,
+                'certifications_warnings' => $certWarnings,
+                'properties_count' => count($resolvedProps),
+                'properties' => $resolvedProps,
+                'properties_warnings' => $propWarnings,
+                'files_count' => count($pdfs),
+                'files' => array_map(fn($f) => [
+                    'name' => $f['original_name'],
+                    'category' => $f['detected_category'],
+                    'match_type' => $f['match_type'] ?? 'name',
+                ], $pdfs),
                 'error' => null,
                 'selected' => true,
             ];
@@ -175,15 +254,20 @@ class BulkImportService
 
             // Scan ZIP for matching
             $matchedImages = [];
+            $matchedPdfs = [];
             if ($zipPath) {
                 $zipScan = $this->zipExtractor->scanStructure($zipPath);
                 if ($zipScan['success']) {
                     $matchedImages = $this->zipExtractor->matchImagesToProducts($products, $zipScan['images']);
+                    $pdfList = $zipScan['pdf_files'] ?? [];
+                    if (!empty($pdfList)) {
+                        $matchedPdfs = $this->zipExtractor->matchPdfsToProducts($products, $pdfList);
+                    }
                 }
             }
 
             // Import selected products
-            $results = $this->importProducts($products, $matchedImages, $selectedRows, $zipPath, $importLog->id);
+            $results = $this->importProducts($products, $matchedImages, $matchedPdfs, $selectedRows, $zipPath, $importLog->id);
 
             $endTime = now();
             $importLog->update([
@@ -250,8 +334,13 @@ class BulkImportService
             }
 
             $matchedImages = $this->zipExtractor->matchImagesToProducts($products, $zipScan['images']);
+            $matchedPdfs = [];
+            $pdfList = $zipScan['pdf_files'] ?? [];
+            if (!empty($pdfList)) {
+                $matchedPdfs = $this->zipExtractor->matchPdfsToProducts($products, $pdfList);
+            }
             $allRows = array_map(fn($p) => $p['row_number'], $products);
-            $results = $this->importProducts($products, $matchedImages, $allRows, $zipPath, $importLog->id);
+            $results = $this->importProducts($products, $matchedImages, $matchedPdfs, $allRows, $zipPath, $importLog->id);
 
             $endTime = now();
             $importLog->update([
@@ -288,12 +377,21 @@ class BulkImportService
         }
     }
 
-    private function importProducts(array $products, array $matchedImages, array $selectedRows, ?string $zipPath, int $importLogId): array
+    private function importProducts(array $products, array $matchedImages, array $matchedPdfs, array $selectedRows, ?string $zipPath, int $importLogId): array
     {
         $successful = 0;
         $failed = 0;
         $skipped = 0;
         $details = [];
+
+        // Pre-load all materials keyed by code (single query)
+        $materialsByCode = Material::all()->keyBy('code');
+
+        // Pre-load all certifications keyed by lowercase title (single query)
+        $certsByTitle = Certification::all()->keyBy(fn($c) => mb_strtolower($c->title));
+
+        // Pre-load category properties with values
+        $propsLookup = $this->buildPropertiesLookup();
 
         foreach ($products as $productData) {
             $rowNumber = $productData['row_number'];
@@ -370,10 +468,58 @@ class BulkImportService
                     $imagesUploaded = $this->uploadProductImagesStreamed($product, $productImages, $zipPath);
                 }
 
+                // Assign materials
+                $materialsAssigned = 0;
+                $materialCodes = $productData['materials'] ?? [];
+                foreach ($materialCodes as $index => $code) {
+                    if ($materialsByCode->has($code)) {
+                        $material = $materialsByCode->get($code);
+                        $isDefault = ($index === 0);
+                        ProductMaterial::assignMaterial($product->id, $material->id, $isDefault, $index);
+                        $materialsAssigned++;
+                    }
+                }
+
+                // Assign certifications
+                $certificationsAssigned = 0;
+                $certTitles = $productData['certifications'] ?? [];
+                $certIds = [];
+                foreach ($certTitles as $title) {
+                    $key = mb_strtolower($title);
+                    if ($certsByTitle->has($key)) {
+                        $certIds[] = $certsByTitle->get($key)->id;
+                        $certificationsAssigned++;
+                    }
+                }
+                if (!empty($certIds)) {
+                    $product->certifications()->attach($certIds);
+                }
+
+                // Assign properties
+                $propertiesAssigned = 0;
+                $parsedProps = $productData['properties'] ?? [];
+                if (!empty($parsedProps)) {
+                    [$resolvedProps, ] = $this->resolveProperties($parsedProps, $categoryId, $propsLookup);
+                    $propValueIds = array_map(fn($r) => $r['id'], $resolvedProps);
+                    if (!empty($propValueIds)) {
+                        ProductPropertyValue::syncProductProperties($product->id, $propValueIds);
+                        $propertiesAssigned = count($propValueIds);
+                    }
+                }
+
+                // Upload matched PDF files
+                $filesAssigned = 0;
+                $productPdfs = $matchedPdfs[$productData['name']] ?? [];
+                if (!empty($productPdfs) && $zipPath) {
+                    $filesAssigned = $this->uploadProductPdfsStreamed($product, $productPdfs, $zipPath);
+                }
+
                 $this->createImportDetail(
                     $importLogId, $rowNumber, $productData['name'], $productData['sku'],
                     'success', null, $product->id, $imagesUploaded,
-                    array_map(fn($img) => $img['original_name'], $productImages)
+                    array_map(fn($img) => $img['original_name'], $productImages),
+                    $materialsAssigned, $certificationsAssigned, $propertiesAssigned,
+                    $filesAssigned
                 );
 
                 $successful++;
@@ -383,6 +529,10 @@ class BulkImportService
                     'product_id' => $product->id,
                     'status' => 'success',
                     'images_count' => $imagesUploaded,
+                    'materials_count' => $materialsAssigned,
+                    'certifications_count' => $certificationsAssigned,
+                    'properties_count' => $propertiesAssigned,
+                    'files_count' => $filesAssigned,
                 ];
 
                 DB::commit();
@@ -457,10 +607,76 @@ class BulkImportService
         return $uploaded;
     }
 
+    /**
+     * Upload PDFs by extracting them one-by-one from the ZIP and creating ProductFile records.
+     */
+    private function uploadProductPdfsStreamed(Product $product, array $pdfsMeta, string $zipPath): int
+    {
+        $uploaded = 0;
+
+        foreach ($pdfsMeta as $sortOrder => $meta) {
+            try {
+                if (!isset($meta['index'])) {
+                    continue;
+                }
+
+                $pdfData = $this->zipExtractor->extractSinglePdf($zipPath, $meta['index']);
+                if (!$pdfData) {
+                    continue;
+                }
+
+                $filename = time() . '_' . Str::random(10) . '.pdf';
+                $storagePath = "products/{$product->id}/files";
+                $fullDir = storage_path("app/public/{$storagePath}");
+
+                if (!is_dir($fullDir)) {
+                    mkdir($fullDir, 0755, true);
+                }
+
+                file_put_contents("{$fullDir}/{$filename}", $pdfData['content']);
+                unset($pdfData['content']);
+
+                $displayName = pathinfo($meta['original_name'], PATHINFO_FILENAME);
+                $category = $meta['detected_category'] ?? 'other';
+
+                ProductFile::create([
+                    'product_id' => $product->id,
+                    'file_name' => $meta['original_name'],
+                    'file_path' => "{$storagePath}/{$filename}",
+                    'file_size' => $pdfData['size'],
+                    'file_type' => 'application/pdf',
+                    'mime_type' => 'application/pdf',
+                    'display_name' => $displayName,
+                    'file_category' => $category,
+                    'is_active' => true,
+                    'is_featured' => false,
+                    'sort_order' => $sortOrder,
+                    'download_count' => 0,
+                    'metadata' => json_encode([
+                        'original_name' => $meta['original_name'],
+                        'imported_via' => 'bulk_import',
+                    ]),
+                ]);
+
+                $uploaded++;
+            } catch (\Exception $e) {
+                Log::error('PDF upload failed', [
+                    'product_id' => $product->id,
+                    'pdf' => $meta['original_name'] ?? '?',
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
+
+        return $uploaded;
+    }
+
     private function createImportDetail(
         int $importLogId, int $rowNumber, string $productName, ?string $sku,
         string $status, ?string $errorMessage = null, ?int $productId = null,
-        int $imagesUploaded = 0, ?array $matchedImages = null
+        int $imagesUploaded = 0, ?array $matchedImages = null,
+        int $materialsAssigned = 0, int $certificationsAssigned = 0,
+        int $propertiesAssigned = 0, int $filesAssigned = 0
     ): void {
         ImportDetail::create([
             'import_log_id' => $importLogId,
@@ -472,7 +688,77 @@ class BulkImportService
             'product_id' => $productId,
             'images_uploaded' => $imagesUploaded,
             'matched_images' => $matchedImages ? json_encode($matchedImages) : null,
+            'materials_assigned' => $materialsAssigned,
+            'certifications_assigned' => $certificationsAssigned,
+            'properties_assigned' => $propertiesAssigned,
+            'files_assigned' => $filesAssigned,
         ]);
+    }
+
+    /**
+     * Build a lookup of category properties with their values, grouped by category ID.
+     * Structure: [categoryId => [lowercasePropertyName => [lowercaseValue => PropertyValue model, ...], ...], ...]
+     */
+    private function buildPropertiesLookup(): array
+    {
+        $lookup = [];
+        $properties = CategoryProperty::with('propertyValues')->get();
+
+        foreach ($properties as $prop) {
+            $catId = $prop->category_id;
+            $propKey = mb_strtolower($prop->name);
+
+            if (!isset($lookup[$catId])) {
+                $lookup[$catId] = [];
+            }
+            if (!isset($lookup[$catId][$propKey])) {
+                $lookup[$catId][$propKey] = ['name' => $prop->name, 'values' => []];
+            }
+
+            foreach ($prop->propertyValues as $pv) {
+                $lookup[$catId][$propKey]['values'][mb_strtolower($pv->value)] = $pv;
+            }
+        }
+
+        return $lookup;
+    }
+
+    /**
+     * Resolve parsed properties against the product's category.
+     * Returns [resolved (array of PropertyValue IDs + display info), warnings].
+     */
+    private function resolveProperties(array $parsedProperties, int $categoryId, array $propsLookup): array
+    {
+        $resolved = [];
+        $warnings = [];
+        $categoryProps = $propsLookup[$categoryId] ?? [];
+
+        foreach ($parsedProperties as $entry) {
+            $propKey = mb_strtolower($entry['property']);
+
+            if (!isset($categoryProps[$propKey])) {
+                $warnings[] = "Property '{$entry['property']}' not found for this category";
+                continue;
+            }
+
+            $propData = $categoryProps[$propKey];
+            foreach ($entry['values'] as $val) {
+                $valKey = mb_strtolower($val);
+                if (isset($propData['values'][$valKey])) {
+                    $pv = $propData['values'][$valKey];
+                    $resolved[] = [
+                        'id' => $pv->id,
+                        'property' => $propData['name'],
+                        'value' => $pv->value,
+                        'display_name' => $pv->display_name,
+                    ];
+                } else {
+                    $warnings[] = "Value '{$val}' not found for property '{$entry['property']}'";
+                }
+            }
+        }
+
+        return [$resolved, $warnings];
     }
 
     private function cleanupSession(string $dir): void
