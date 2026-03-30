@@ -587,7 +587,9 @@ class BulkImportService
                 if ($uploadResult['success']) {
                     ProductImage::create([
                         'product_id' => $product->id,
-                        'image_path' => $uploadResult['data']['path'],
+                        'image_url' => $uploadResult['data']['url'],
+                        'alt_text' => $product->name,
+                        'title' => $product->name,
                         'is_primary' => $meta['is_primary'],
                         'is_featured' => $meta['is_primary'],
                         'is_active' => true,
@@ -697,7 +699,8 @@ class BulkImportService
 
     /**
      * Build a lookup of category properties with their values, grouped by category ID.
-     * Structure: [categoryId => [lowercasePropertyName => [lowercaseValue => PropertyValue model, ...], ...], ...]
+     * Each property is indexed by both its name and display_name (lowercase).
+     * Each value is indexed by both its value and display_name (lowercase).
      */
     private function buildPropertiesLookup(): array
     {
@@ -706,17 +709,25 @@ class BulkImportService
 
         foreach ($properties as $prop) {
             $catId = $prop->category_id;
-            $propKey = mb_strtolower($prop->name);
 
             if (!isset($lookup[$catId])) {
                 $lookup[$catId] = [];
             }
-            if (!isset($lookup[$catId][$propKey])) {
-                $lookup[$catId][$propKey] = ['name' => $prop->name, 'values' => []];
-            }
+
+            $propEntry = ['name' => $prop->name, 'values' => []];
 
             foreach ($prop->propertyValues as $pv) {
-                $lookup[$catId][$propKey]['values'][mb_strtolower($pv->value)] = $pv;
+                $propEntry['values'][mb_strtolower($pv->value)] = $pv;
+                if ($pv->display_name && mb_strtolower($pv->display_name) !== mb_strtolower($pv->value)) {
+                    $propEntry['values'][mb_strtolower($pv->display_name)] = $pv;
+                }
+            }
+
+            $nameKey = mb_strtolower($prop->name);
+            $lookup[$catId][$nameKey] = $propEntry;
+
+            if ($prop->display_name && mb_strtolower($prop->display_name) !== $nameKey) {
+                $lookup[$catId][mb_strtolower($prop->display_name)] = $propEntry;
             }
         }
 

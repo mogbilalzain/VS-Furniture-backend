@@ -454,7 +454,7 @@ class ProductController extends Controller
      */
     public function adminIndex(Request $request)
     {
-        $query = Product::with('category');
+        $query = Product::with(['category', 'propertyValues.categoryProperty', 'activeFiles']);
 
         // Search filter
         if ($request->has('search')) {

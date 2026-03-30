@@ -244,8 +244,8 @@ class ImportController extends Controller
     {
         try {
             $csvContent = "product_name,description,short_description,category,sku,model,status,is_featured,sort_order,specifications,materials,certifications,properties\n";
-            $csvContent .= "عسل فاخر Premium,عسل طبيعي 100%,عسل طبيعي,منتجات غذائية,HONEY-001,HN-2024,active,yes,10,\"{\"\"الوزن\"\":\"\"500جم\"\",\"\"المنشأ\"\":\"\"الإمارات\"\"}\"," . "\"M030, F010, L020\"," . "\"GS Tested Safety, GREENGUARD Gold\"," . "\"Type:executive_desks; Material:wood,metal\"\n";
-            $csvContent .= "زيت زيتون بكر,زيت زيتون معصور على البارد,زيت زيتون,منتجات غذائية,OLIVE-001,OO-2024,active,no,20,\"{\"\"الحجم\"\":\"\"1 لتر\"\",\"\"المنشأ\"\":\"\"اليونان\"\"}\"," . "\"M040\"," . "\"BIFMA e3 LEVEL\"," . "\"Type:task_chairs; Back Support:high_back\"\n";
+            $csvContent .= "عسل فاخر Premium,عسل طبيعي 100%,عسل طبيعي,منتجات غذائية,HONEY-001,HN-2024,active,yes,10,\"{\"\"الوزن\"\":\"\"500جم\"\",\"\"المنشأ\"\":\"\"الإمارات\"\"}\"," . "\"M030, F010, L020\"," . "\"GS Tested Safety, GREENGUARD Gold\"," . "\"Size:Large (160-200cm); Height Adjustment:Fixed Height; Color:Walnut\"\n";
+            $csvContent .= "زيت زيتون بكر,زيت زيتون معصور على البارد,زيت زيتون,منتجات غذائية,OLIVE-001,OO-2024,active,no,20,\"{\"\"الحجم\"\":\"\"1 لتر\"\",\"\"المنشأ\"\":\"\"اليونان\"\"}\"," . "\"M040\"," . "\"BIFMA e3 LEVEL\"," . "\"Chair Type:Task Chair; Back Support:High Back\"\n";
             $csvContent .= "دبس التمر طبيعي,دبس تمر طبيعي 100%,دبس تمر,منتجات غذائية,DATE-001,DS-2024,active,no,30,\"{\"\"الوزن\"\":\"\"350جم\"\",\"\"المنشأ\"\":\"\"السعودية\"\"}\",,," . "\n";
             $csvContent .= "\n";
             $csvContent .= "# PDF Files: Include PDF files in the ZIP alongside images. Name them as SKU-category.pdf (e.g. HONEY-001-catalog.pdf or HONEY-001-manual.pdf). Categories: catalog / manual / specification / warranty / installation / other\n";

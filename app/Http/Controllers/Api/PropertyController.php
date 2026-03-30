@@ -7,6 +7,7 @@ use App\Models\CategoryProperty;
 use App\Models\PropertyValue;
 use App\Models\Category;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class PropertyController extends Controller
 {
@@ -21,19 +22,26 @@ class PropertyController extends Controller
             $properties = $category->activeProperties()
                 ->with(['activePropertyValues'])
                 ->get()
-                ->map(function($property) {
+                ->map(function($property) use ($category) {
                     return [
                         'id' => $property->id,
                         'name' => $property->name,
                         'display_name' => $property->display_name,
                         'input_type' => $property->input_type,
                         'is_required' => $property->is_required,
-                        'values' => $property->activePropertyValues->map(function($value) {
+                        'values' => $property->activePropertyValues->map(function($value) use ($category) {
+                            $liveCount = DB::table('product_property_values')
+                                ->join('products', 'products.id', '=', 'product_property_values.product_id')
+                                ->where('product_property_values.property_value_id', $value->id)
+                                ->where('products.category_id', $category->id)
+                                ->where('products.status', 'active')
+                                ->count();
+
                             return [
                                 'id' => $value->id,
                                 'value' => $value->value,
                                 'display_name' => $value->display_name,
-                                'product_count' => $value->product_count,
+                                'product_count' => $liveCount,
                             ];
                         }),
                     ];
@@ -51,6 +59,81 @@ class PropertyController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'فشل في جلب خصائص الفئة',
+            ], 500);
+        }
+    }
+
+    /**
+     * Get faceted properties with dynamic counts based on active filters.
+     * For each property P, value counts are computed using all selected filters
+     * EXCEPT those on P itself (standard faceted search).
+     */
+    public function getFacetedProperties($categoryId, Request $request)
+    {
+        try {
+            $category = Category::findOrFail($categoryId);
+            $categorySlug = $request->get('category_slug', $category->slug ?? null);
+            $activeFilters = $request->get('filters', []);
+
+            $properties = $category->activeProperties()
+                ->with(['activePropertyValues'])
+                ->get()
+                ->map(function ($property) use ($category, $activeFilters) {
+                    $otherFilterValueIds = [];
+                    foreach ($activeFilters as $propName => $valueIds) {
+                        if ($propName === $property->name) {
+                            continue;
+                        }
+                        if (is_array($valueIds)) {
+                            $otherFilterValueIds[] = $valueIds;
+                        }
+                    }
+
+                    $values = $property->activePropertyValues->map(function ($value) use ($category, $otherFilterValueIds) {
+                        $query = DB::table('product_property_values')
+                            ->join('products', 'products.id', '=', 'product_property_values.product_id')
+                            ->where('product_property_values.property_value_id', $value->id)
+                            ->where('products.category_id', $category->id)
+                            ->where('products.status', 'active');
+
+                        foreach ($otherFilterValueIds as $ids) {
+                            $query->whereExists(function ($sub) use ($ids) {
+                                $sub->select(DB::raw(1))
+                                    ->from('product_property_values as ppv_filter')
+                                    ->whereColumn('ppv_filter.product_id', 'products.id')
+                                    ->whereIn('ppv_filter.property_value_id', $ids);
+                            });
+                        }
+
+                        return [
+                            'id' => $value->id,
+                            'value' => $value->value,
+                            'display_name' => $value->display_name,
+                            'product_count' => $query->count(),
+                        ];
+                    });
+
+                    return [
+                        'id' => $property->id,
+                        'name' => $property->name,
+                        'display_name' => $property->display_name,
+                        'input_type' => $property->input_type,
+                        'is_required' => $property->is_required,
+                        'values' => $values,
+                    ];
+                });
+
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'category' => ['id' => $category->id, 'name' => $category->name],
+                    'properties' => $properties,
+                ],
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to load faceted properties: ' . $e->getMessage(),
             ], 500);
         }
     }

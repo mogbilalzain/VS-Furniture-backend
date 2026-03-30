@@ -48,6 +48,7 @@ Route::get('/categories', [CategoryController::class, 'index']);
 Route::get('/categories/{category}', [CategoryController::class, 'show']);
 Route::get('/categories/{category}/products', [CategoryController::class, 'products']);
 Route::get('/categories/{category}/properties', [PropertyController::class, 'getCategoryProperties']);
+Route::get('/categories/{category}/properties/faceted', [PropertyController::class, 'getFacetedProperties']);
 Route::get('/products/{product}/properties', [ProductController::class, 'getProductProperties']);
 Route::get('/products/{product}/files', [ProductFileController::class, 'index']);
 Route::get('/properties/{property}/values', [PropertyController::class, 'getPropertyValues']);
@@ -103,6 +104,7 @@ Route::middleware('auth:sanctum')->group(function () {
         
         // Product Properties (admin)
         Route::post('/products/{product}/properties', [ProductController::class, 'attachProperties']);
+        Route::post('/admin/products/{product}/properties', [ProductController::class, 'attachProperties']);
         Route::get('/categories/{category}/properties-for-product', [ProductController::class, 'getCategoryPropertiesForProduct']);
         
         // Product Files (admin)
