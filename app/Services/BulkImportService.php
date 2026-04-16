@@ -8,7 +8,9 @@ use App\Models\ProductMaterial;
 use App\Models\Material;
 use App\Models\Certification;
 use App\Models\CategoryProperty;
+use App\Models\PropertyGroup;
 use App\Models\ProductPropertyValue;
+use App\Models\PropertyValue;
 use App\Models\ProductFile;
 use App\Models\Category;
 use App\Models\ImportLog;
@@ -154,7 +156,7 @@ class BulkImportService
 
             // Resolve properties for preview
             $parsedProps = $p['properties'] ?? [];
-            [$resolvedProps, $propWarnings] = $this->resolveProperties($parsedProps, $p['category_id'], $propsLookup);
+            [$resolvedProps, $propWarnings] = $this->resolveProperties($parsedProps, $p['category_id'], $propsLookup, false);
 
             // Matched PDFs for preview
             $pdfs = $matchedPdfs[$p['name']] ?? [];
@@ -457,7 +459,6 @@ class BulkImportService
                     'status' => $productData['status'],
                     'is_featured' => $productData['is_featured'],
                     'sort_order' => $productData['sort_order'],
-                    'specifications' => $productData['specifications'] ? json_encode($productData['specifications']) : null,
                 ]);
 
                 // Stream images one-by-one from ZIP
@@ -499,10 +500,10 @@ class BulkImportService
                 $propertiesAssigned = 0;
                 $parsedProps = $productData['properties'] ?? [];
                 if (!empty($parsedProps)) {
-                    [$resolvedProps, ] = $this->resolveProperties($parsedProps, $categoryId, $propsLookup);
-                    $propValueIds = array_map(fn($r) => $r['id'], $resolvedProps);
+                    [$resolvedProps, ] = $this->resolveProperties($parsedProps, $categoryId, $propsLookup, true);
+                    $propValueIds = array_unique(array_filter(array_map(fn($r) => $r['id'], $resolvedProps)));
                     if (!empty($propValueIds)) {
-                        ProductPropertyValue::syncProductProperties($product->id, $propValueIds);
+                        ProductPropertyValue::syncProductProperties($product->id, array_values($propValueIds));
                         $propertiesAssigned = count($propValueIds);
                     }
                 }
@@ -705,7 +706,7 @@ class BulkImportService
     private function buildPropertiesLookup(): array
     {
         $lookup = [];
-        $properties = CategoryProperty::with('propertyValues')->get();
+        $properties = CategoryProperty::with(['propertyValues', 'propertyGroup'])->get();
 
         foreach ($properties as $prop) {
             $catId = $prop->category_id;
@@ -714,7 +715,15 @@ class BulkImportService
                 $lookup[$catId] = [];
             }
 
-            $propEntry = ['name' => $prop->name, 'values' => []];
+            $groupName = $prop->propertyGroup ? mb_strtolower($prop->propertyGroup->name) : null;
+            $groupDisplayName = $prop->propertyGroup ? mb_strtolower($prop->propertyGroup->display_name) : null;
+
+            $propEntry = [
+                'name' => $prop->name,
+                'group_name' => $groupName,
+                'group_display_name' => $groupDisplayName,
+                'values' => [],
+            ];
 
             foreach ($prop->propertyValues as $pv) {
                 $propEntry['values'][mb_strtolower($pv->value)] = $pv;
@@ -738,7 +747,7 @@ class BulkImportService
      * Resolve parsed properties against the product's category.
      * Returns [resolved (array of PropertyValue IDs + display info), warnings].
      */
-    private function resolveProperties(array $parsedProperties, int $categoryId, array $propsLookup): array
+    private function resolveProperties(array $parsedProperties, int $categoryId, array $propsLookup, bool $autoCreate = false): array
     {
         $resolved = [];
         $warnings = [];
@@ -746,13 +755,74 @@ class BulkImportService
 
         foreach ($parsedProperties as $entry) {
             $propKey = mb_strtolower($entry['property']);
+            $groupName = $entry['group'] ?? null;
+            $groupFilter = $groupName ? mb_strtolower($groupName) : null;
 
             if (!isset($categoryProps[$propKey])) {
-                $warnings[] = "Property '{$entry['property']}' not found for this category";
+                if ($autoCreate) {
+                    $propertyGroupId = null;
+                    if ($groupName) {
+                        $group = PropertyGroup::firstOrCreate(
+                            ['category_id' => $categoryId, 'name' => $groupName],
+                            ['display_name' => $groupName, 'is_active' => true]
+                        );
+                        $propertyGroupId = $group->id;
+                    }
+
+                    $property = CategoryProperty::firstOrCreate(
+                        ['category_id' => $categoryId, 'name' => $entry['property']],
+                        [
+                            'display_name' => $entry['property'],
+                            'property_group_id' => $propertyGroupId,
+                            'input_type' => 'select',
+                            'is_active' => true,
+                            'is_filterable' => true,
+                        ]
+                    );
+
+                    foreach ($entry['values'] as $val) {
+                        $pv = PropertyValue::firstOrCreate(
+                            ['category_property_id' => $property->id, 'value' => $val],
+                            ['display_name' => $val, 'is_active' => true]
+                        );
+                        $resolved[] = [
+                            'id' => $pv->id,
+                            'property' => $property->name,
+                            'value' => $pv->value,
+                            'display_name' => $pv->display_name,
+                            'auto_created' => true,
+                        ];
+                    }
+
+                    $warnings[] = "Property '{$entry['property']}'" . ($groupName ? " under group '{$groupName}'" : "") . " was auto-created";
+                } else {
+                    foreach ($entry['values'] as $val) {
+                        $resolved[] = [
+                            'id' => null,
+                            'property' => $entry['property'],
+                            'value' => $val,
+                            'display_name' => $val,
+                            'auto_created' => true,
+                        ];
+                    }
+                    $warnings[] = "Property '{$entry['property']}'" . ($groupName ? " under group '{$groupName}'" : "") . " will be auto-created";
+                }
                 continue;
             }
 
             $propData = $categoryProps[$propKey];
+
+            if ($groupFilter) {
+                $matchesGroup = (
+                    $propData['group_name'] === $groupFilter ||
+                    $propData['group_display_name'] === $groupFilter
+                );
+                if (!$matchesGroup) {
+                    $warnings[] = "Property '{$entry['property']}' does not belong to group '{$entry['group']}'";
+                    continue;
+                }
+            }
+
             foreach ($entry['values'] as $val) {
                 $valKey = mb_strtolower($val);
                 if (isset($propData['values'][$valKey])) {
@@ -764,7 +834,37 @@ class BulkImportService
                         'display_name' => $pv->display_name,
                     ];
                 } else {
-                    $warnings[] = "Value '{$val}' not found for property '{$entry['property']}'";
+                    if ($autoCreate) {
+                        $property = CategoryProperty::where('category_id', $categoryId)
+                            ->where(function ($q) use ($propKey) {
+                                $q->whereRaw('LOWER(name) = ?', [$propKey])
+                                  ->orWhereRaw('LOWER(display_name) = ?', [$propKey]);
+                            })->first();
+
+                        if ($property) {
+                            $pv = PropertyValue::firstOrCreate(
+                                ['category_property_id' => $property->id, 'value' => $val],
+                                ['display_name' => $val, 'is_active' => true]
+                            );
+                            $resolved[] = [
+                                'id' => $pv->id,
+                                'property' => $property->name,
+                                'value' => $pv->value,
+                                'display_name' => $pv->display_name,
+                                'auto_created' => true,
+                            ];
+                            $warnings[] = "Value '{$val}' for property '{$entry['property']}' was auto-created";
+                        }
+                    } else {
+                        $resolved[] = [
+                            'id' => null,
+                            'property' => $entry['property'],
+                            'value' => $val,
+                            'display_name' => $val,
+                            'auto_created' => true,
+                        ];
+                        $warnings[] = "Value '{$val}' for property '{$entry['property']}' will be auto-created";
+                    }
                 }
             }
         }

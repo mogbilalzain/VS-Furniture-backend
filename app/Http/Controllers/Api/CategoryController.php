@@ -472,7 +472,7 @@ class CategoryController extends Controller
     public function getCategoryProperties(Category $category)
     {
         try {
-            $properties = $category->properties()->with('propertyValues')->get();
+            $properties = $category->properties()->with(['propertyValues', 'propertyGroup'])->get();
             
             return response()->json([
                 'success' => true,

@@ -8,6 +8,12 @@ use App\Models\ImportLog;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Log;
+use PhpOffice\PhpSpreadsheet\Spreadsheet;
+use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
+use PhpOffice\PhpSpreadsheet\Style\Fill;
+use PhpOffice\PhpSpreadsheet\Style\Font;
+use PhpOffice\PhpSpreadsheet\Style\Alignment;
+use PhpOffice\PhpSpreadsheet\Style\Border;
 
 class ImportController extends Controller
 {
@@ -238,23 +244,215 @@ class ImportController extends Controller
     }
 
     /**
-     * Download Excel template.
+     * Download Excel template with 4 sheets.
      */
     public function downloadTemplate()
     {
         try {
-            $csvContent = "product_name,description,short_description,category,sku,model,status,is_featured,sort_order,specifications,materials,certifications,properties\n";
-            $csvContent .= "عسل فاخر Premium,عسل طبيعي 100%,عسل طبيعي,منتجات غذائية,HONEY-001,HN-2024,active,yes,10,\"{\"\"الوزن\"\":\"\"500جم\"\",\"\"المنشأ\"\":\"\"الإمارات\"\"}\"," . "\"M030, F010, L020\"," . "\"GS Tested Safety, GREENGUARD Gold\"," . "\"Size:Large (160-200cm); Height Adjustment:Fixed Height; Color:Walnut\"\n";
-            $csvContent .= "زيت زيتون بكر,زيت زيتون معصور على البارد,زيت زيتون,منتجات غذائية,OLIVE-001,OO-2024,active,no,20,\"{\"\"الحجم\"\":\"\"1 لتر\"\",\"\"المنشأ\"\":\"\"اليونان\"\"}\"," . "\"M040\"," . "\"BIFMA e3 LEVEL\"," . "\"Chair Type:Task Chair; Back Support:High Back\"\n";
-            $csvContent .= "دبس التمر طبيعي,دبس تمر طبيعي 100%,دبس تمر,منتجات غذائية,DATE-001,DS-2024,active,no,30,\"{\"\"الوزن\"\":\"\"350جم\"\",\"\"المنشأ\"\":\"\"السعودية\"\"}\",,," . "\n";
-            $csvContent .= "\n";
-            $csvContent .= "# PDF Files: Include PDF files in the ZIP alongside images. Name them as SKU-category.pdf (e.g. HONEY-001-catalog.pdf or HONEY-001-manual.pdf). Categories: catalog / manual / specification / warranty / installation / other\n";
+            $spreadsheet = new Spreadsheet();
 
-            $csvContent = "\xEF\xBB\xBF" . $csvContent;
+            $headerStyle = [
+                'font' => ['bold' => true, 'color' => ['rgb' => 'FFFFFF'], 'size' => 11],
+                'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => '4472C4']],
+                'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER, 'vertical' => Alignment::VERTICAL_CENTER],
+                'borders' => ['allBorders' => ['borderStyle' => Border::BORDER_THIN]],
+            ];
+            $exampleStyle = [
+                'font' => ['color' => ['rgb' => '808080'], 'italic' => true],
+                'borders' => ['allBorders' => ['borderStyle' => Border::BORDER_THIN]],
+            ];
+            $noteStyle = [
+                'font' => ['color' => ['rgb' => '0070C0'], 'italic' => true, 'size' => 10],
+            ];
 
-            return response($csvContent)
-                ->header('Content-Type', 'text/csv; charset=UTF-8')
-                ->header('Content-Disposition', 'attachment; filename="product_import_template.csv"');
+            // --- Sheet 1: Products ---
+            $productsSheet = $spreadsheet->getActiveSheet();
+            $productsSheet->setTitle('Products');
+
+            $productHeaders = ['product_name', 'category', 'sku', 'model', 'description', 'short_description', 'status', 'is_featured', 'sort_order'];
+            foreach ($productHeaders as $col => $header) {
+                $productsSheet->setCellValueByColumnAndRow($col + 1, 1, $header);
+            }
+            $productsSheet->getStyle('A1:I1')->applyFromArray($headerStyle);
+
+            $exampleProducts = [
+                ['PantoMove-LuPo', 'Office Chairs', 'VS-PML-001', 'PML-31506', 'Height-adjustable swivel student chair with double-walled polypropylene seat shell featuring air-cushion effect.', 'Height-adjustable swivel student chair', 'active', 'yes', 1],
+                ['PantoMove-VF', 'Office Chairs', 'VS-PMV-001', 'PMV-31520', 'Height-adjustable swivel chair with beech plywood seat shell and anti-slip paint.', 'Swivel chair with wooden seat shell', 'active', 'yes', 2],
+                ['Compass-VF Chair', 'Office Chairs', 'VS-CVF-001', 'CVF-34100', 'Stackable four-legged chair with beech plywood seat shell.', 'Stackable four-legged chair', 'active', 'no', 3],
+                ['Hammer Chair', 'Office Chairs', 'VS-HAM-001', 'HAM-36200', 'Classic stacking chair with ergonomic polypropylene seat shell.', 'Classic stacking chair', 'active', 'no', 4],
+                ['PantoFlex Chair', 'Office Chairs', 'VS-PFX-001', 'PFX-32400', 'Flexible four-legged chair with spring-loaded seat mechanism.', 'Flexible active sitting chair', 'active', 'yes', 5],
+                ['LuPo Stacking Chair', 'Office Chairs', 'VS-LPC-001', 'LPC-35100', 'Lightweight stacking chair with double-walled LuPo polypropylene seat shell.', 'Lightweight stacking chair', 'active', 'no', 6],
+            ];
+            foreach ($exampleProducts as $rowIdx => $rowData) {
+                foreach ($rowData as $col => $value) {
+                    $productsSheet->setCellValueByColumnAndRow($col + 1, $rowIdx + 2, $value);
+                }
+            }
+            $lastProductRow = count($exampleProducts) + 1;
+            $productsSheet->getStyle("A2:I{$lastProductRow}")->applyFromArray($exampleStyle);
+
+            $noteRow = $lastProductRow + 2;
+            $productsSheet->setCellValue("A{$noteRow}", 'NOTE: Materials, Certifications, and Properties are defined in separate sheets (Sheet 2-4) linked by SKU.');
+            $productsSheet->getStyle("A{$noteRow}")->applyFromArray($noteStyle);
+            $noteRow++;
+            $productsSheet->setCellValue("A{$noteRow}", 'PDF Files: Include PDFs in the ZIP named as SKU-category.pdf (e.g. VS-PML-001-catalog.pdf). Categories: catalog / manual / specification / warranty / installation / other');
+            $productsSheet->getStyle("A{$noteRow}")->applyFromArray($noteStyle);
+            $noteRow++;
+            $productsSheet->setCellValue("A{$noteRow}", 'You can also keep materials/certifications/properties inline in Sheet 1 columns for backward compatibility.');
+            $productsSheet->getStyle("A{$noteRow}")->applyFromArray($noteStyle);
+
+            foreach (range('A', 'I') as $col) {
+                $productsSheet->getColumnDimension($col)->setAutoSize(true);
+            }
+            $productsSheet->setAutoFilter('A1:I1');
+
+            // --- Sheet 2: Properties ---
+            $propsSheet = $spreadsheet->createSheet();
+            $propsSheet->setTitle('Properties');
+
+            $propsHeaders = ['sku', 'group', 'property', 'value'];
+            foreach ($propsHeaders as $col => $header) {
+                $propsSheet->setCellValueByColumnAndRow($col + 1, 1, $header);
+            }
+            $propsSheet->getStyle('A1:D1')->applyFromArray($headerStyle);
+
+            $exampleProps = [
+                ['VS-PML-001', '',      'Chair Type',        'Swivel Chair'],
+                ['VS-PML-001', '',      'Height Adjustment', 'Gas Spring'],
+                ['VS-PML-001', 'Frame', 'Base Type',         'Five-Star Foot'],
+                ['VS-PML-001', 'Frame', 'Material',          'Aluminum'],
+                ['VS-PML-001', '',      'Seat Material',     'Polypropylene'],
+                ['VS-PMV-001', '',      'Chair Type',        'Swivel Chair'],
+                ['VS-PMV-001', '',      'Height Adjustment', 'Gas Spring'],
+                ['VS-PMV-001', 'Frame', 'Base Type',         'Five-Star Foot'],
+                ['VS-PMV-001', 'Frame', 'Material',          'Aluminum'],
+                ['VS-PMV-001', '',      'Seat Material',     'Beech Plywood'],
+                ['VS-CVF-001', '',      'Chair Type',        'Stacking Chair'],
+                ['VS-CVF-001', '',      'Height Adjustment', 'Fixed Height'],
+                ['VS-CVF-001', 'Frame', 'Material',          'Steel Tube'],
+                ['VS-CVF-001', '',      'Seat Material',     'Beech Plywood'],
+                ['VS-HAM-001', '',      'Chair Type',        'Stacking Chair'],
+                ['VS-HAM-001', '',      'Height Adjustment', 'Fixed Height'],
+                ['VS-HAM-001', 'Frame', 'Material',          'Steel Tube'],
+                ['VS-HAM-001', '',      'Seat Material',     'Polypropylene'],
+                ['VS-PFX-001', '',      'Chair Type',        'Four-Legged Chair'],
+                ['VS-PFX-001', '',      'Height Adjustment', 'Fixed Height'],
+                ['VS-PFX-001', 'Frame', 'Material',          'Steel Tube'],
+                ['VS-PFX-001', '',      'Seat Material',     'Polypropylene'],
+                ['VS-LPC-001', '',      'Chair Type',        'Stacking Chair'],
+                ['VS-LPC-001', '',      'Height Adjustment', 'Fixed Height'],
+                ['VS-LPC-001', 'Frame', 'Material',          'Steel Tube'],
+                ['VS-LPC-001', '',      'Seat Material',     'Polypropylene'],
+            ];
+            foreach ($exampleProps as $rowIdx => $rowData) {
+                foreach ($rowData as $col => $value) {
+                    $propsSheet->setCellValueByColumnAndRow($col + 1, $rowIdx + 2, $value);
+                }
+            }
+            $lastPropRow = count($exampleProps) + 1;
+            $propsSheet->getStyle("A2:D{$lastPropRow}")->applyFromArray($exampleStyle);
+
+            $propNoteRow = $lastPropRow + 2;
+            $propsSheet->setCellValue("A{$propNoteRow}", 'Each row = one property-value pair for a product. "group" is optional (leave empty for ungrouped properties).');
+            $propsSheet->getStyle("A{$propNoteRow}")->applyFromArray($noteStyle);
+
+            foreach (range('A', 'D') as $col) {
+                $propsSheet->getColumnDimension($col)->setAutoSize(true);
+            }
+            $propsSheet->setAutoFilter('A1:D1');
+
+            // --- Sheet 3: Materials ---
+            $matsSheet = $spreadsheet->createSheet();
+            $matsSheet->setTitle('Materials');
+
+            $matsHeaders = ['sku', 'material_code'];
+            foreach ($matsHeaders as $col => $header) {
+                $matsSheet->setCellValueByColumnAndRow($col + 1, 1, $header);
+            }
+            $matsSheet->getStyle('A1:B1')->applyFromArray($headerStyle);
+
+            $exampleMats = [
+                ['VS-PML-001', 'M030'],
+                ['VS-PML-001', 'F010'],
+                ['VS-PMV-001', 'M030'],
+                ['VS-PMV-001', 'M040'],
+                ['VS-CVF-001', 'M040'],
+                ['VS-CVF-001', 'F010'],
+                ['VS-HAM-001', 'M030'],
+                ['VS-PFX-001', 'M030'],
+                ['VS-PFX-001', 'F010'],
+                ['VS-LPC-001', 'M030'],
+            ];
+            foreach ($exampleMats as $rowIdx => $rowData) {
+                foreach ($rowData as $col => $value) {
+                    $matsSheet->setCellValueByColumnAndRow($col + 1, $rowIdx + 2, $value);
+                }
+            }
+            $lastMatRow = count($exampleMats) + 1;
+            $matsSheet->getStyle("A2:B{$lastMatRow}")->applyFromArray($exampleStyle);
+
+            $matNoteRow = $lastMatRow + 2;
+            $matsSheet->setCellValue("A{$matNoteRow}", 'Each row = one material assignment. Use the material code as it exists in the system.');
+            $matsSheet->getStyle("A{$matNoteRow}")->applyFromArray($noteStyle);
+
+            foreach (range('A', 'B') as $col) {
+                $matsSheet->getColumnDimension($col)->setAutoSize(true);
+            }
+            $matsSheet->setAutoFilter('A1:B1');
+
+            // --- Sheet 4: Certifications ---
+            $certsSheet = $spreadsheet->createSheet();
+            $certsSheet->setTitle('Certifications');
+
+            $certsHeaders = ['sku', 'certification'];
+            foreach ($certsHeaders as $col => $header) {
+                $certsSheet->setCellValueByColumnAndRow($col + 1, 1, $header);
+            }
+            $certsSheet->getStyle('A1:B1')->applyFromArray($headerStyle);
+
+            $exampleCerts = [
+                ['VS-PML-001', 'GS Tested Safety'],
+                ['VS-PML-001', 'GREENGUARD Gold'],
+                ['VS-PMV-001', 'GS Tested Safety'],
+                ['VS-CVF-001', 'GS Tested Safety'],
+                ['VS-HAM-001', 'BIFMA e3 LEVEL'],
+                ['VS-PFX-001', 'GS Tested Safety'],
+                ['VS-PFX-001', 'GREENGUARD Gold'],
+                ['VS-LPC-001', 'GS Tested Safety'],
+            ];
+            foreach ($exampleCerts as $rowIdx => $rowData) {
+                foreach ($rowData as $col => $value) {
+                    $certsSheet->setCellValueByColumnAndRow($col + 1, $rowIdx + 2, $value);
+                }
+            }
+            $lastCertRow = count($exampleCerts) + 1;
+            $certsSheet->getStyle("A2:B{$lastCertRow}")->applyFromArray($exampleStyle);
+
+            $certNoteRow = $lastCertRow + 2;
+            $certsSheet->setCellValue("A{$certNoteRow}", 'Each row = one certification assignment. Use the certification title as it exists in the system.');
+            $certsSheet->getStyle("A{$certNoteRow}")->applyFromArray($noteStyle);
+
+            foreach (range('A', 'B') as $col) {
+                $certsSheet->getColumnDimension($col)->setAutoSize(true);
+            }
+            $certsSheet->setAutoFilter('A1:B1');
+
+            // Set Sheet 1 as active
+            $spreadsheet->setActiveSheetIndex(0);
+
+            // Write to temp file and stream
+            $tempFile = storage_path('app/temp/product_import_template.xlsx');
+            $tempDir = dirname($tempFile);
+            if (!is_dir($tempDir)) {
+                mkdir($tempDir, 0755, true);
+            }
+
+            $writer = new Xlsx($spreadsheet);
+            $writer->save($tempFile);
+
+            return response()->download($tempFile, 'product_import_template.xlsx', [
+                'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            ])->deleteFileAfterSend(true);
         } catch (\Exception $e) {
             Log::error('Failed to download template', ['error' => $e->getMessage()]);
             return response()->json(['success' => false, 'message' => 'Failed to download template', 'error' => $e->getMessage()], 500);

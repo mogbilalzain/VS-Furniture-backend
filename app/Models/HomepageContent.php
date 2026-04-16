@@ -29,6 +29,8 @@ class HomepageContent extends Model
         'sort_order' => 'integer'
     ];
 
+    protected $appends = ['thumbnail_url', 'embed_url'];
+
     /**
      * Scope to get active content
      */

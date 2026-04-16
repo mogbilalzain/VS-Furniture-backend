@@ -15,7 +15,7 @@ return new class extends Migration
             $table->id();
             $table->foreignId('user_id')->constrained()->onDelete('cascade');
             $table->string('excel_file_name');
-            $table->string('zip_file_name');
+            $table->string('zip_file_name')->nullable();
             $table->integer('total_rows')->default(0);
             $table->integer('successful_imports')->default(0);
             $table->integer('failed_imports')->default(0);

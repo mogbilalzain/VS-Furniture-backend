@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\CategoryProperty;
 use App\Models\PropertyValue;
+use App\Models\PropertyGroup;
 use App\Models\Category;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -20,7 +21,7 @@ class PropertyController extends Controller
             $category = Category::findOrFail($categoryId);
             
             $properties = $category->activeProperties()
-                ->with(['activePropertyValues'])
+                ->with(['activePropertyValues', 'propertyGroup'])
                 ->get()
                 ->map(function($property) use ($category) {
                     return [
@@ -29,6 +30,13 @@ class PropertyController extends Controller
                         'display_name' => $property->display_name,
                         'input_type' => $property->input_type,
                         'is_required' => $property->is_required,
+                        'property_group' => $property->propertyGroup ? [
+                            'id' => $property->propertyGroup->id,
+                            'name' => $property->propertyGroup->name,
+                            'display_name' => $property->propertyGroup->display_name,
+                            'display_name_ar' => $property->propertyGroup->display_name_ar,
+                            'sort_order' => $property->propertyGroup->sort_order,
+                        ] : null,
                         'values' => $property->activePropertyValues->map(function($value) use ($category) {
                             $liveCount = DB::table('product_property_values')
                                 ->join('products', 'products.id', '=', 'product_property_values.product_id')
@@ -76,7 +84,7 @@ class PropertyController extends Controller
             $activeFilters = $request->get('filters', []);
 
             $properties = $category->activeProperties()
-                ->with(['activePropertyValues'])
+                ->with(['activePropertyValues', 'propertyGroup'])
                 ->get()
                 ->map(function ($property) use ($category, $activeFilters) {
                     $otherFilterValueIds = [];
@@ -119,6 +127,13 @@ class PropertyController extends Controller
                         'display_name' => $property->display_name,
                         'input_type' => $property->input_type,
                         'is_required' => $property->is_required,
+                        'property_group' => $property->propertyGroup ? [
+                            'id' => $property->propertyGroup->id,
+                            'name' => $property->propertyGroup->name,
+                            'display_name' => $property->propertyGroup->display_name,
+                            'display_name_ar' => $property->propertyGroup->display_name_ar,
+                            'sort_order' => $property->propertyGroup->sort_order,
+                        ] : null,
                         'values' => $values,
                     ];
                 });
@@ -148,6 +163,7 @@ class PropertyController extends Controller
             'display_name' => 'nullable|string|max:255',
             'description' => 'nullable|string',
             'input_type' => 'required|in:checkbox,radio,select',
+            'property_group_id' => 'nullable|integer|exists:property_groups,id',
             'is_required' => 'boolean',
             'is_active' => 'boolean',
             'sort_order' => 'integer|min:0',
@@ -156,6 +172,7 @@ class PropertyController extends Controller
         try {
             $property = CategoryProperty::create([
                 'category_id' => $categoryId,
+                'property_group_id' => $request->property_group_id,
                 'name' => $request->name,
                 'display_name' => $request->display_name ?: $request->name,
                 'description' => $request->description,
@@ -165,6 +182,8 @@ class PropertyController extends Controller
                 'is_filterable' => $request->boolean('is_filterable', true),
                 'sort_order' => $request->integer('sort_order', 0),
             ]);
+
+            $property->load('propertyGroup');
 
             return response()->json([
                 'success' => true,
@@ -222,8 +241,10 @@ class PropertyController extends Controller
         try {
             $property = CategoryProperty::findOrFail($propertyId);
             $property->update($request->only([
-                'name', 'display_name', 'input_type', 'is_required', 'is_active', 'sort_order'
+                'name', 'display_name', 'input_type', 'is_required', 'is_active', 'sort_order', 'property_group_id'
             ]));
+
+            $property->load('propertyGroup');
 
             return response()->json([
                 'success' => true,
@@ -267,7 +288,7 @@ class PropertyController extends Controller
     public function adminIndex()
     {
         try {
-            $properties = CategoryProperty::with(['category', 'propertyValues'])
+            $properties = CategoryProperty::with(['category', 'propertyValues', 'propertyGroup'])
                 ->orderBy('category_id')
                 ->orderBy('sort_order')
                 ->get()
@@ -282,6 +303,12 @@ class PropertyController extends Controller
                         'is_active' => $property->is_active,
                         'is_filterable' => $property->is_filterable,
                         'sort_order' => $property->sort_order,
+                        'property_group_id' => $property->property_group_id,
+                        'property_group' => $property->propertyGroup ? [
+                            'id' => $property->propertyGroup->id,
+                            'name' => $property->propertyGroup->name,
+                            'display_name' => $property->propertyGroup->display_name,
+                        ] : null,
                         'category' => $property->category ? [
                             'id' => $property->category->id,
                             'name' => $property->category->name,
@@ -305,9 +332,157 @@ class PropertyController extends Controller
         }
     }
 
-    /**
-     * Get all property values for admin management
-     */
+    public function getPropertyGroups($categoryId)
+    {
+        try {
+            $category = Category::findOrFail($categoryId);
+            $groups = $category->propertyGroups()
+                ->withCount('properties')
+                ->get()
+                ->map(function ($group) {
+                    return [
+                        'id' => $group->id,
+                        'category_id' => $group->category_id,
+                        'name' => $group->name,
+                        'display_name' => $group->display_name,
+                        'display_name_ar' => $group->display_name_ar,
+                        'sort_order' => $group->sort_order,
+                        'is_active' => $group->is_active,
+                        'properties_count' => $group->properties_count,
+                    ];
+                });
+
+            return response()->json([
+                'success' => true,
+                'data' => $groups,
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to load property groups',
+            ], 500);
+        }
+    }
+
+    public function storePropertyGroup(Request $request, $categoryId)
+    {
+        $request->validate([
+            'name' => 'required|string|max:255',
+            'display_name' => 'required|string|max:255',
+            'display_name_ar' => 'nullable|string|max:255',
+            'sort_order' => 'integer|min:0',
+            'is_active' => 'boolean',
+        ]);
+
+        try {
+            $group = PropertyGroup::create([
+                'category_id' => $categoryId,
+                'name' => $request->name,
+                'display_name' => $request->display_name,
+                'display_name_ar' => $request->display_name_ar,
+                'sort_order' => $request->integer('sort_order', 0),
+                'is_active' => $request->boolean('is_active', true),
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Property group created successfully',
+                'data' => $group,
+            ], 201);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to create property group',
+            ], 500);
+        }
+    }
+
+    public function updatePropertyGroup(Request $request, $groupId)
+    {
+        $request->validate([
+            'name' => 'string|max:255',
+            'display_name' => 'string|max:255',
+            'display_name_ar' => 'nullable|string|max:255',
+            'sort_order' => 'integer|min:0',
+            'is_active' => 'boolean',
+        ]);
+
+        try {
+            $group = PropertyGroup::findOrFail($groupId);
+            $group->update($request->only([
+                'name', 'display_name', 'display_name_ar', 'sort_order', 'is_active'
+            ]));
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Property group updated successfully',
+                'data' => $group,
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to update property group',
+            ], 500);
+        }
+    }
+
+    public function deletePropertyGroup($groupId)
+    {
+        try {
+            $group = PropertyGroup::findOrFail($groupId);
+            CategoryProperty::where('property_group_id', $groupId)
+                ->update(['property_group_id' => null]);
+            $group->delete();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Property group deleted successfully',
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to delete property group',
+            ], 500);
+        }
+    }
+
+    public function getAllPropertyGroups()
+    {
+        try {
+            $groups = PropertyGroup::with('category')
+                ->withCount('properties')
+                ->orderBy('category_id')
+                ->orderBy('sort_order')
+                ->get()
+                ->map(function ($group) {
+                    return [
+                        'id' => $group->id,
+                        'category_id' => $group->category_id,
+                        'name' => $group->name,
+                        'display_name' => $group->display_name,
+                        'display_name_ar' => $group->display_name_ar,
+                        'sort_order' => $group->sort_order,
+                        'is_active' => $group->is_active,
+                        'properties_count' => $group->properties_count,
+                        'category' => $group->category ? [
+                            'id' => $group->category->id,
+                            'name' => $group->category->name,
+                        ] : null,
+                    ];
+                });
+
+            return response()->json([
+                'success' => true,
+                'data' => $groups,
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to load property groups',
+            ], 500);
+        }
+    }
+
     public function adminPropertyValues()
     {
         try {

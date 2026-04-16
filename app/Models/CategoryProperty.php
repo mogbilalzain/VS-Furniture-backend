@@ -10,6 +10,7 @@ class CategoryProperty extends Model
 {
     protected $fillable = [
         'category_id',
+        'property_group_id',
         'name',
         'display_name',
         'display_name_ar',
@@ -23,18 +24,21 @@ class CategoryProperty extends Model
 
     protected $casts = [
         'category_id' => 'integer',
+        'property_group_id' => 'integer',
         'sort_order' => 'integer',
         'is_required' => 'boolean',
         'is_active' => 'boolean',
         'is_filterable' => 'boolean',
     ];
 
-    /**
-     * Get the category that owns this property
-     */
     public function category(): BelongsTo
     {
         return $this->belongsTo(Category::class);
+    }
+
+    public function propertyGroup(): BelongsTo
+    {
+        return $this->belongsTo(PropertyGroup::class);
     }
 
     /**

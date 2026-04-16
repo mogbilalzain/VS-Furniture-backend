@@ -49,6 +49,7 @@ Route::get('/categories/{category}', [CategoryController::class, 'show']);
 Route::get('/categories/{category}/products', [CategoryController::class, 'products']);
 Route::get('/categories/{category}/properties', [PropertyController::class, 'getCategoryProperties']);
 Route::get('/categories/{category}/properties/faceted', [PropertyController::class, 'getFacetedProperties']);
+Route::get('/categories/{category}/property-groups', [PropertyController::class, 'getPropertyGroups']);
 Route::get('/products/{product}/properties', [ProductController::class, 'getProductProperties']);
 Route::get('/products/{product}/files', [ProductFileController::class, 'index']);
 Route::get('/properties/{property}/values', [PropertyController::class, 'getPropertyValues']);
@@ -131,6 +132,12 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::delete('/admin/property-values/{value}', [PropertyController::class, 'deletePropertyValue']);
         Route::post('/admin/properties/update-counts', [PropertyController::class, 'updateProductCounts']);
         
+        // Property Groups Management (admin)
+        Route::get('/admin/property-groups', [PropertyController::class, 'getAllPropertyGroups']);
+        Route::post('/admin/categories/{category}/property-groups', [PropertyController::class, 'storePropertyGroup']);
+        Route::put('/admin/property-groups/{group}', [PropertyController::class, 'updatePropertyGroup']);
+        Route::delete('/admin/property-groups/{group}', [PropertyController::class, 'deletePropertyGroup']);
+        
         // Categories (admin)
         Route::get('/admin/categories', [CategoryController::class, 'adminIndex']);
         Route::post('/admin/categories', [CategoryController::class, 'store']);
@@ -170,7 +177,7 @@ Route::middleware('auth:sanctum')->group(function () {
         
         // Admin Solutions routes
         Route::get('/admin/solutions', [SolutionController::class, 'adminIndex']);
-        Route::get('/admin/solutions/available-products', [ProductController::class, 'adminIndex']); // Fallback to products
+        Route::get('/admin/solutions/available-products', [SolutionController::class, 'getAvailableProducts']);
         Route::post('/admin/solutions/upload-image', [SolutionController::class, 'uploadImage']);
         Route::apiResource('admin/solutions', SolutionController::class)->except(['index']);
         

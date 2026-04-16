@@ -37,6 +37,18 @@ class Category extends Model
     /**
      * Get properties for this category
      */
+    public function propertyGroups(): HasMany
+    {
+        return $this->hasMany(PropertyGroup::class)->orderBy('sort_order');
+    }
+
+    public function activePropertyGroups(): HasMany
+    {
+        return $this->hasMany(PropertyGroup::class)
+            ->where('is_active', true)
+            ->orderBy('sort_order');
+    }
+
     public function properties(): HasMany
     {
         return $this->hasMany(CategoryProperty::class);

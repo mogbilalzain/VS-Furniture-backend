@@ -543,7 +543,7 @@ class ProductController extends Controller
     public function getProductProperties($productId)
     {
         try {
-            $product = Product::with(['propertyValues.categoryProperty', 'category'])
+            $product = Product::with(['propertyValues.categoryProperty.propertyGroup', 'category'])
                 ->findOrFail($productId);
 
             $properties = $product->propertyValues->groupBy(function($item) {
@@ -555,6 +555,12 @@ class ProductController extends Controller
                     'property_name' => $property->name,
                     'property_display_name' => $property->display_name,
                     'input_type' => $property->input_type,
+                    'property_group' => $property->propertyGroup ? [
+                        'id' => $property->propertyGroup->id,
+                        'name' => $property->propertyGroup->name,
+                        'display_name' => $property->propertyGroup->display_name,
+                        'sort_order' => $property->propertyGroup->sort_order,
+                    ] : null,
                     'values' => $group->map(function($value) {
                         return [
                             'id' => $value->id,
@@ -622,7 +628,7 @@ class ProductController extends Controller
     public function getCategoryPropertiesForProduct($categoryId)
     {
         try {
-            $category = Category::with(['activeProperties.activePropertyValues'])
+            $category = Category::with(['activeProperties.activePropertyValues', 'activeProperties.propertyGroup'])
                 ->findOrFail($categoryId);
 
             $properties = $category->activeProperties->map(function($property) {
@@ -632,6 +638,12 @@ class ProductController extends Controller
                     'display_name' => $property->display_name,
                     'input_type' => $property->input_type,
                     'is_required' => $property->is_required,
+                    'property_group' => $property->propertyGroup ? [
+                        'id' => $property->propertyGroup->id,
+                        'name' => $property->propertyGroup->name,
+                        'display_name' => $property->propertyGroup->display_name,
+                        'sort_order' => $property->propertyGroup->sort_order,
+                    ] : null,
                     'values' => $property->activePropertyValues->map(function($value) {
                         return [
                             'id' => $value->id,
