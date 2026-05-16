@@ -1,74 +1,90 @@
-# Laravel Backend Dockerfile
-FROM php:8.2-fpm-alpine
+# =====================================================================
+# VS Furniture Laravel Backend (PHP 8.2 - FPM)
+# Multi-stage build:
+#   1) vendor   : composer install (production)
+#   2) runtime  : php-fpm-alpine + الكود + الإضافات + entrypoint
+# يخدم خلف Nginx (FastCGI 9000). لا يقوم بأي artisan وقت البناء؛ كل شيء
+# يعتمد على .env يجري في entrypoint.sh عند الإقلاع.
+# =====================================================================
 
-# Set working directory
-WORKDIR /var/www/html
+# --- 1) مرحلة بناء الاعتمادات ---
+FROM composer:2 AS vendor
 
-# Install system dependencies
-RUN apk add --no-cache \
-    git \
-    curl \
-    libpng-dev \
-    libxml2-dev \
-    zip \
-    unzip \
-    oniguruma-dev \
-    libzip-dev \
-    sqlite-dev \
-    freetype-dev \
-    libjpeg-turbo-dev \
-    libwebp-dev
+WORKDIR /app
 
-# Install PHP extensions
-RUN docker-php-ext-configure gd --with-freetype --with-jpeg --with-webp \
-    && docker-php-ext-install \
-    pdo \
-    pdo_sqlite \
-    mbstring \
-    exif \
-    pcntl \
-    bcmath \
-    gd \
-    zip \
-    xml \
-    curl
-
-# Install Composer
-COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
-
-# Copy composer files
+# نسخ ملفات الاعتمادات أولاً للاستفادة من cache
 COPY composer.json composer.lock ./
 
-# Install PHP dependencies
-RUN composer install --no-dev --optimize-autoloader --no-scripts
-
-# Copy application code
+# نسخ بقية الكود (يحتاج composer لمعرفة autoload paths عند dump-autoload)
 COPY . .
 
-# Set permissions
-RUN chown -R www-data:www-data /var/www/html \
-    && chmod -R 755 /var/www/html/storage \
-    && chmod -R 755 /var/www/html/bootstrap/cache
+# تثبيت الاعتمادات للإنتاج بدون تشغيل scripts (artisan قد يفشل بدون .env)
+RUN composer install \
+        --no-dev \
+        --no-interaction \
+        --no-progress \
+        --no-scripts \
+        --prefer-dist \
+        --optimize-autoloader
 
-# Create storage directories
-RUN mkdir -p storage/app/public \
-    && mkdir -p storage/framework/cache \
-    && mkdir -p storage/framework/sessions \
-    && mkdir -p storage/framework/views \
-    && mkdir -p storage/logs
+# --- 2) المرحلة النهائية ---
+FROM php:8.2-fpm-alpine AS runtime
 
-# Generate application key and run migrations
-RUN php artisan key:generate --force \
-    && php artisan config:cache \
-    && php artisan route:cache \
-    && php artisan view:cache
+WORKDIR /var/www/html
 
-# Create storage link
-RUN php artisan storage:link
+# اعتمادات النظام واللازمة لـ pecl + PHP extensions
+RUN apk add --no-cache \
+        bash \
+        curl \
+        git \
+        icu-dev \
+        libpng-dev \
+        libxml2-dev \
+        libzip-dev \
+        oniguruma-dev \
+        freetype-dev \
+        libjpeg-turbo-dev \
+        libwebp-dev \
+        mysql-client \
+        tzdata \
+    && docker-php-ext-configure gd --with-freetype --with-jpeg --with-webp \
+    && docker-php-ext-install -j"$(nproc)" \
+        bcmath \
+        exif \
+        gd \
+        intl \
+        mbstring \
+        opcache \
+        pcntl \
+        pdo_mysql \
+        xml \
+        zip \
+    && apk del --no-network --purge
 
-# Expose port
-EXPOSE 8000
+# إعدادات PHP المخصصة
+COPY docker/php.ini /usr/local/etc/php/conf.d/zz-app.ini
 
-# Start PHP-FPM
-CMD ["php-fpm"]
+# نسخ الكود (مع الاعتمادات من المرحلة السابقة)
+COPY --from=vendor /app /var/www/html
 
+# entrypoint
+COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
+
+# إنشاء مجلدات storage الضرورية + ضبط الصلاحيات
+RUN mkdir -p \
+        storage/app/public \
+        storage/framework/cache \
+        storage/framework/sessions \
+        storage/framework/views \
+        storage/logs \
+        bootstrap/cache \
+        uploads \
+    && chown -R www-data:www-data /var/www/html \
+    && find /var/www/html/storage -type d -exec chmod 775 {} \; \
+    && find /var/www/html/bootstrap/cache -type d -exec chmod 775 {} \;
+
+EXPOSE 9000
+
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
+CMD ["php-fpm", "-F"]

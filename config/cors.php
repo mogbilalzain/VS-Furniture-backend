@@ -20,16 +20,24 @@ return [
     'allowed_methods' => ['*'],
 
     'allowed_origins' => [
-        'http://localhost:3000',
+        // Production
+        'https://vsme.ae',
+        'https://www.vsme.ae',
+        // Local backend ports
         'http://localhost:8000',
-        'http://127.0.0.1:3000',
-        'http://localhost:3001',
-        'http://127.0.0.1:3001',
+        'http://127.0.0.1:8000',
+        'http://localhost:8001',
+        'http://127.0.0.1:8001',
+        // الدومينات القديمة (انتقالياً)
         'https://ashieari.com',
         'https://miminnovations.com',
     ],
 
-    'allowed_origins_patterns' => [],
+    /** أي منفذ على localhost لتطوير Next (3000، 3002، …). */
+    'allowed_origins_patterns' => [
+        '#^http://localhost(:\d+)?$#',
+        '#^http://127\.0\.0\.1(:\d+)?$#',
+    ],
 
     'allowed_headers' => ['*'],
 
