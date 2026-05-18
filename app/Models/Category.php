@@ -128,40 +128,14 @@ class Category extends Model
     }
 
     /**
-     * Get category image URL with proper path
+     * Get category image URL with proper path.
+     *
+     * يطبّع أي صيغة قديمة (storage/, images/, categories/, اسم ملف فقط) إلى
+     * `{APP_URL}/uploads/images/categories/...` عبر ImageHelper المُوحَّد.
      */
     public function getImageUrlAttribute()
     {
-        if (!$this->image) {
-            return null;
-        }
-
-        // If it's already a full URL, return as is
-        if (str_starts_with($this->image, 'http')) {
-            return $this->image;
-        }
-
-        // Handle Laravel storage images (start with /storage/)
-        if (str_starts_with($this->image, '/storage/')) {
-            $backendUrl = config('app.url', 'http://localhost:8000');
-            return $backendUrl . $this->image;
-        }
-
-        // Handle NextJS public images (start with /images/)
-        if (str_starts_with($this->image, '/images/')) {
-            $frontendUrl = config('app.frontend_url', 'http://localhost:3000');
-            return $frontendUrl . $this->image;
-        }
-
-        // Convert relative path to Laravel storage URL
-        if (str_starts_with($this->image, 'images/') || str_starts_with($this->image, 'categories/')) {
-            $backendUrl = config('app.url', 'http://localhost:8000');
-            return $backendUrl . '/storage/' . $this->image;
-        }
-
-        // Default case - assume it's a Laravel storage path
-        $backendUrl = config('app.url', 'http://localhost:8000');
-        return $backendUrl . '/storage/categories/' . basename($this->image);
+        return \App\Helpers\ImageHelper::buildFullUrl($this->image, 'categories');
     }
 
     /**

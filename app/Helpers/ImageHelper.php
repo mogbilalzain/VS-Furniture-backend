@@ -159,6 +159,99 @@ class ImageHelper
     }
 
     /**
+     * تطبيع أي صيغة قديمة/مختلطة لمسار صورة إلى /uploads/images/{category}/{file}.
+     *
+     * يدعم الصيغ التالية:
+     *   - http(s)://...                 -> كما هو (يمر دون تعديل).
+     *   - /uploads/...                  -> كما هو.
+     *   - uploads/...                   -> /uploads/...
+     *   - /storage/images/...           -> /uploads/images/...
+     *   - /storage/{cat}/{file}         -> /uploads/images/{cat}/{file}
+     *   - /images/{cat}/{file}          -> /uploads/images/{cat}/{file}
+     *   - images/{cat}/{file}           -> /uploads/images/{cat}/{file}
+     *   - {cat}/{file}                  -> /uploads/images/{cat}/{file} (إذا {cat} ضمن SUPPORTED_CATEGORIES)
+     *   - {file}                        -> /uploads/images/{defaultCategory}/{file}
+     *
+     * @param string|null $value
+     * @param string $defaultCategory أحد SUPPORTED_CATEGORIES — يُستخدم عندما لا تظهر الفئة في القيمة
+     * @return string|null
+     */
+    public static function normalizeToUploadsPath(?string $value, string $defaultCategory = 'products'): ?string
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        $trimmed = trim($value);
+
+        // روابط مطلقة تبقى كما هي
+        if (preg_match('#^https?://#i', $trimmed)) {
+            return $trimmed;
+        }
+
+        // التطبيع المبدئي: حذف الـ slashes البادئة
+        $clean = ltrim($trimmed, '/');
+
+        // إن كان فعلاً تحت uploads/
+        if (str_starts_with($clean, 'uploads/')) {
+            return '/' . $clean;
+        }
+
+        // إن بدأ بـ storage/...
+        if (str_starts_with($clean, 'storage/')) {
+            $rest = substr($clean, strlen('storage/'));
+            // storage/images/... -> uploads/images/...
+            if (str_starts_with($rest, 'images/')) {
+                return '/uploads/' . $rest;
+            }
+            // storage/{cat}/file -> uploads/images/{cat}/file (إذا {cat} مدعومة)
+            $segments = explode('/', $rest, 2);
+            if (count($segments) === 2 && in_array($segments[0], self::SUPPORTED_CATEGORIES, true)) {
+                return '/uploads/images/' . $rest;
+            }
+            // غير معروف تحت storage/ -> ندفعه تحت default category مع اسم الملف فقط
+            return '/uploads/images/' . $defaultCategory . '/' . basename($rest);
+        }
+
+        // إن بدأ بـ images/...
+        if (str_starts_with($clean, 'images/')) {
+            return '/uploads/' . $clean;
+        }
+
+        // إن بدأ بـ {cat}/{file} حيث {cat} مدعومة
+        $segments = explode('/', $clean, 2);
+        if (count($segments) === 2 && in_array($segments[0], self::SUPPORTED_CATEGORIES, true)) {
+            return '/uploads/images/' . $clean;
+        }
+
+        // اسم ملف فقط (أو مسار غير معروف) — نضعه تحت الفئة الافتراضية
+        return '/uploads/images/' . $defaultCategory . '/' . basename($clean);
+    }
+
+    /**
+     * بناء رابط مطلق لصورة (يستخدم APP_URL).
+     *
+     * @param string|null $value
+     * @param string $defaultCategory
+     * @return string|null
+     */
+    public static function buildFullUrl(?string $value, string $defaultCategory = 'products'): ?string
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+        if (preg_match('#^https?://#i', trim($value))) {
+            return trim($value);
+        }
+        $path = self::normalizeToUploadsPath($value, $defaultCategory);
+        if ($path === null) {
+            return null;
+        }
+        $base = rtrim((string) config('app.url', 'http://localhost'), '/');
+        return $base . $path;
+    }
+
+    /**
      * الحصول على الرابط الكامل للصورة
      *
      * @param string $path

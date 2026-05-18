@@ -111,26 +111,13 @@ class Material extends Model
     }
 
     /**
-     * Get full image URL (handle both local and external URLs)
+     * Get full image URL (handle both local and external URLs).
+     *
+     * يطبّع المسار إلى `{APP_URL}/uploads/images/materials/...` عبر ImageHelper.
      */
     public function getFullImageUrlAttribute()
     {
-        if (!$this->image_url) {
-            return null;
-        }
-
-        // If it's already a full URL, return as is
-        if (filter_var($this->image_url, FILTER_VALIDATE_URL)) {
-            return $this->image_url;
-        }
-
-        // If it starts with '/', it's a local path
-        if (str_starts_with($this->image_url, '/')) {
-            return url($this->image_url);
-        }
-
-        // Otherwise, assume it's stored in storage
-        return Storage::url($this->image_url);
+        return \App\Helpers\ImageHelper::buildFullUrl($this->image_url, 'materials');
     }
 
     /**

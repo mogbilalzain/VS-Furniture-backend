@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document</title>
+    <style>
+        body {
+  background-color: #ffffff; /* خلفية الصفحة البيضاء */
+  font-family: Arial, sans-serif;
+}
+
+.list-container {
+  display: flex;
+  flex-direction: column;
+  gap: 20px; /* المسافة بين المستطيلات */
+  max-width: 600px;
+  padding: 20px;
+}
+
+.list-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 20px 10px 40px; /* زيادة الحشوة اليسرى بسبب القص */
+  font-size: 18px;
+  font-weight: bold;
+  color: #333;
+  
+  /* التدرج اللوني من البرتقالي الفاتح جداً إلى البرتقالي الداكن في النهاية */
+  /* background: linear-gradient(to right, #fff4eb 0%, #ffe3d1 70%, #f3be9b 100%); */
+background: linear-gradient(to bottom, #ffffff 0%, #ffe3d1 70%, #f3be9b 100%);
+/* background: linear-gradient(to bottom, #fff4eb 0%, #ffe3d1 70%, #f3be9b 100%); */
+
+  
+
+  /* زوايا مستديرة جهة اليمين فقط */
+  border-top-right-radius: 8px;
+  border-bottom-right-radius: 8px;
+
+  
+
+
+  
+  /* قص الحافة اليسرى بشكل مائل تماماً كالصورة */
+    clip-path: polygon(40px 0%, 100% 0%, calc(100% - 40px) 100%, 0% 100%);
+
+  /* clip-path: polygon(55px 0%, 100% 0%, 100% 100%, 0% 100%); */
+  /* clip-path: polygon(55px 0%, 100% 0%, 100% 100%, 0% 100%); */
+
+
+  
+}
+
+.rank {
+  margin-right: 15px;
+}
+
+.name {
+  flex-grow: 1;
+  text-align: left;
+}
+
+.amount {
+  font-weight: 900;
+}
+
+    </style>
+</head>
+<body>
+        <div class="list-container">
+  <div class="list-item">
+    <span class="rank">1</span>
+    <span class="name">Hafiz Ishag Malik</span>
+    <span class="amount">300$</span>
+  </div>
+  
+  <div class="list-item">
+    <span class="rank">2</span>
+    <span class="name">Mohamed Mehdi</span>
+    <span class="amount">200$</span>
+  </div>
+</div>
+</body>
+</html>

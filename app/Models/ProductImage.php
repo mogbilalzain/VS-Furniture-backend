@@ -87,42 +87,14 @@ class ProductImage extends Model
     }
 
     /**
-     * Get full image URL (handle both local and external URLs)
+     * Get full image URL (handle both local and external URLs).
+     *
+     * كل المسارات تطبَّع إلى `{APP_URL}/uploads/images/products/...` عبر
+     * ImageHelper الموحَّد، مع المرور دون تعديل لأي رابط مطلق (http/https).
      */
     public function getFullImageUrlAttribute()
     {
-        if (!$this->image_url) {
-            return null;
-        }
-
-        // If it's already a full URL, return as is
-        if (str_starts_with($this->image_url, 'http')) {
-            return $this->image_url;
-        }
-
-        // Handle Laravel storage images (start with /storage/)
-        if (str_starts_with($this->image_url, '/storage/')) {
-            // Use Laravel backend URL for storage images
-            $backendUrl = config('app.url', 'http://localhost:8000');
-            return $backendUrl . $this->image_url;
-        }
-
-        // Handle NextJS public images (start with /images/)
-        if (str_starts_with($this->image_url, '/images/')) {
-            // Use environment-based frontend URL for Next.js images
-            $frontendUrl = config('app.frontend_url', 'http://localhost:3000');
-            return $frontendUrl . $this->image_url;
-        }
-
-        // Convert relative path to Laravel storage URL
-        if (str_starts_with($this->image_url, 'images/') || str_starts_with($this->image_url, 'products/')) {
-            $backendUrl = config('app.url', 'http://localhost:8000');
-            return $backendUrl . '/storage/' . $this->image_url;
-        }
-
-        // Default case - assume it's a Laravel storage path
-        $backendUrl = config('app.url', 'http://localhost:8000');
-        return $backendUrl . '/storage/products/' . basename($this->image_url);
+        return \App\Helpers\ImageHelper::buildFullUrl($this->image_url, 'products');
     }
 
     /**

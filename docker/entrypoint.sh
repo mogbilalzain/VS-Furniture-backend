@@ -14,8 +14,8 @@ cd /var/www/html
 log() { printf '[entrypoint] %s\n' "$*"; }
 
 # 1) ضبط الصلاحيات (مفيد عند أول إقلاع أو بعد bind-mount)
-chown -R www-data:www-data storage bootstrap/cache uploads public/storage 2>/dev/null || true
-find storage bootstrap/cache -type d -exec chmod 775 {} \; 2>/dev/null || true
+chown -R www-data:www-data storage bootstrap/cache uploads 2>/dev/null || true
+find storage bootstrap/cache uploads -type d -exec chmod 775 {} \; 2>/dev/null || true
 
 # 2) انتظار MySQL إذا كانت بياناته موجودة
 DB_HOST="${DB_HOST:-host.docker.internal}"
@@ -38,20 +38,22 @@ if [ -n "${DB_USERNAME}" ] && [ -n "${DB_DATABASE}" ]; then
     log "DB متاحة (أو انتهى المهلة)."
 fi
 
-# 3) ربط storage إذا لم يكن مربوطاً
-if [ ! -L public/storage ]; then
-    php artisan storage:link || true
-fi
-
-# 4) كاش التكوين والمسارات والمشاهد
+# 3) كاش التكوين والمسارات والمشاهد
+#    (لا نحتاج storage:link لأن الصور تُخدم من /uploads/ مباشرة)
 php artisan config:cache  || log "config:cache فشل (متابعة)."
 php artisan route:cache   || log "route:cache فشل (متابعة)."
 php artisan view:cache    || log "view:cache فشل (متابعة)."
 
-# 5) الترحيلات
+# 4) الترحيلات
 if [ "${RUN_MIGRATIONS:-true}" = "true" ]; then
     log "تشغيل php artisan migrate --force"
     php artisan migrate --force || log "migrate فشل (متابعة)."
+fi
+
+# 5) توحيد مسارات الصور (idempotent — يطبع نتائج فقط عند وجود عمل)
+if [ "${RUN_IMAGES_UNIFY:-true}" = "true" ]; then
+    log "تشغيل php artisan images:unify"
+    php artisan images:unify --quiet-when-clean || log "images:unify فشل (متابعة)."
 fi
 
 # 6) تشغيل CMD الممرّر

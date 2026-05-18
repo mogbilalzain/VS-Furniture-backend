@@ -5,7 +5,10 @@ namespace App\Helpers;
 class ImageUrlHelper
 {
     /**
-     * الحصول على الرابط الكامل للصورة
+     * الحصول على الرابط الكامل للصورة.
+     *
+     * يستخدم ImageHelper::buildFullUrl لتوحيد كل الصيغ القديمة على
+     * `{APP_URL}/uploads/images/solutions/...`.
      *
      * @param string|null $imagePath
      * @return string|null
@@ -16,20 +19,7 @@ class ImageUrlHelper
             return self::getPlaceholderUrl();
         }
 
-        // إذا كان الرابط كاملاً بالفعل (يحتوي على http/https)
-        if (str_starts_with($imagePath, 'http')) {
-            return $imagePath;
-        }
-
-        // إضافة domain للرابط
-        $baseUrl = config('app.url');
-        
-        // التأكد من وجود slash في البداية
-        if (!str_starts_with($imagePath, '/')) {
-            $imagePath = '/' . $imagePath;
-        }
-
-        return $baseUrl . $imagePath;
+        return \App\Helpers\ImageHelper::buildFullUrl($imagePath, 'solutions');
     }
 
     /**
