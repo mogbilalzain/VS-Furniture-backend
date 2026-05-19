@@ -82,18 +82,20 @@ class ImagesDiagnose extends Command
 
         $rows = [];
         foreach ($dirs as $label => $path) {
-            $exists = is_dir($path);
-            $count  = $exists ? $this->countImageFiles($path) : 0;
-            $sample = $exists ? $this->firstImageRelative($path) : '';
-            $rows[] = [
+            $exists   = is_dir($path);
+            $writable = $exists ? (is_writable($path) ? 'YES' : 'NO (خطأ صلاحيات!)') : '-';
+            $count    = $exists ? $this->countImageFiles($path) : 0;
+            $sample   = $exists ? $this->firstImageRelative($path) : '';
+            $rows[]   = [
                 $label,
                 $exists ? 'YES' : 'NO',
+                $writable,
                 $exists ? (string) $count : '-',
                 $sample,
             ];
         }
 
-        $this->table(['directory', 'exists', '#images', 'sample file'], $rows);
+        $this->table(['directory', 'exists', 'writable', '#images', 'sample file'], $rows);
     }
 
     private function printDbSamples(int $samples): void

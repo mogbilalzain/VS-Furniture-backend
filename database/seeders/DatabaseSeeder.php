@@ -19,6 +19,8 @@ class DatabaseSeeder extends Seeder
             // New Properties System
             CategoryPropertiesSeeder::class,
             ProductsWithPropertiesSeeder::class,
+            // Global site settings
+            SettingsSeeder::class,
             // Legacy Filter System (for backward compatibility)
             // FilterSeeder::class,
             // ProductSeeder::class,

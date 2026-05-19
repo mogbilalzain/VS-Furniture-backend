@@ -13,9 +13,29 @@ cd /var/www/html
 
 log() { printf '[entrypoint] %s\n' "$*"; }
 
-# 1) ضبط الصلاحيات (مفيد عند أول إقلاع أو بعد bind-mount)
-chown -R www-data:www-data storage bootstrap/cache uploads 2>/dev/null || true
-find storage bootstrap/cache uploads -type d -exec chmod 775 {} \; 2>/dev/null || true
+# 1) فحص قابلية الكتابة على bind mounts وwrite probe صريح
+#    ملاحظة: عند التشغيل بـ user=82:82 (www-data) لا نستطيع chown — بل يجب أن
+#    يكون المجلد على المضيف ملكاً لـ UID 82 أو قابلاً للكتابة قبل تشغيل الحاوية.
+#    لذا نكتفي بالفحص والإبلاغ بدل الصمت.
+for dir in storage bootstrap/cache uploads; do
+    full="/var/www/html/$dir"
+    if [ ! -d "$full" ]; then
+        log "WARN: المجلد $full غير موجود — سيُنشَأ."
+        mkdir -p "$full" 2>/dev/null || true
+    fi
+    if [ ! -w "$full" ]; then
+        log "ERROR: $full غير قابل للكتابة! نفّذ على المضيف: sudo chown -R 82:82 ./data/$dir"
+        log "       ثم: docker compose restart laravel-fpm"
+    fi
+done
+
+# write probe: تأكيد قابلية كتابة uploads (ضروري لرفع الصور)
+if ! (echo t > /var/www/html/uploads/.writetest 2>/dev/null && rm -f /var/www/html/uploads/.writetest 2>/dev/null); then
+    log "ERROR: الكتابة في /var/www/html/uploads فاشلة — رفع الصور سيفشل!"
+    log "       شغّل: ./scripts/fix-permissions.sh ثم أعد تشغيل الحاوية."
+else
+    log "OK: /var/www/html/uploads قابل للكتابة."
+fi
 
 # 2) انتظار MySQL إذا كانت بياناته موجودة
 DB_HOST="${DB_HOST:-host.docker.internal}"

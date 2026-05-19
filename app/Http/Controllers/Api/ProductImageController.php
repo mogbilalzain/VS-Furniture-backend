@@ -72,16 +72,26 @@ class ProductImageController extends Controller
 
             $product = Product::findOrFail($productId);
             $uploadedImages = [];
+            $uploadErrors  = [];
             $altTexts = $request->get('alt_texts', []);
             $titles = $request->get('titles', []);
             $imageType = $request->get('image_type', 'product');
 
             foreach ($request->file('images') as $index => $image) {
-                // استخدام النظام الجديد
                 $result = ImageHelper::uploadImage($image, 'products', (string)$productId);
-                
+
                 if (!$result['success']) {
-                    // إذا فشل الرفع، تجاهل هذه الصورة واستمر
+                    // جمع الخطأ بدل ابتلاعه — سيُرسَل للواجهة لعرضه للمستخدم
+                    $uploadErrors[] = [
+                        'index'    => $index,
+                        'filename' => $image->getClientOriginalName(),
+                        'error'    => $result['error'] ?? $result['message'] ?? 'Upload failed',
+                    ];
+                    \Log::error('ProductImage upload failed', [
+                        'product_id' => $productId,
+                        'filename'   => $image->getClientOriginalName(),
+                        'error'      => $result['error'] ?? $result['message'],
+                    ]);
                     continue;
                 }
 
@@ -105,7 +115,7 @@ class ProductImageController extends Controller
 
                 $productImage = ProductImage::create([
                     'product_id' => $productId,
-                    'image_url' => $imageData['url'], // استخدام الرابط الجديد
+                    'image_url' => $imageData['url'],
                     'alt_text' => $altTexts[$index] ?? $product->name . ' - Image ' . ($index + 1),
                     'title' => $titles[$index] ?? $product->name,
                     'is_primary' => $shouldBePrimary,
@@ -136,10 +146,22 @@ class ProductImageController extends Controller
                 ];
             }
 
+            // إن لم تُرفع أي صورة بسبب أخطاء، أرجع 422 مع تفاصيل صريحة
+            if (empty($uploadedImages)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'لم يتم رفع أي صورة. تحقق من الصلاحيات أو نوع الملف.',
+                    'errors'  => $uploadErrors,
+                ], 422);
+            }
+
             return response()->json([
                 'success' => true,
-                'data' => $uploadedImages,
-                'message' => 'Images uploaded successfully'
+                'data'    => $uploadedImages,
+                'errors'  => $uploadErrors, // أخطاء جزئية إن نجح بعض ولم ينجح بعض
+                'message' => empty($uploadErrors)
+                    ? 'Images uploaded successfully'
+                    : 'تم رفع بعض الصور فقط؛ راجع errors للتفاصيل',
             ], 201);
 
         } catch (\Exception $e) {

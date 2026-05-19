@@ -20,6 +20,7 @@ use App\Http\Controllers\Api\SolutionController;
 use App\Http\Controllers\Api\HomepageContentController;
 use App\Http\Controllers\Api\DashboardController;
 use App\Http\Controllers\Api\ImportController;
+use App\Http\Controllers\Api\SettingsController;
 
 /*
 |--------------------------------------------------------------------------
@@ -88,6 +89,9 @@ Route::get('/products/{product}/materials', [ProductMaterialController::class, '
 
 // Homepage Content routes (public)
 Route::get('/homepage-content', [HomepageContentController::class, 'index']);
+
+// Site settings (public read-only: maintenance flag)
+Route::get('/settings/maintenance', [SettingsController::class, 'maintenance']);
 
 // Protected routes (require authentication)
 Route::middleware('auth:sanctum')->group(function () {
@@ -216,6 +220,10 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/admin/homepage-content/reorder', [HomepageContentController::class, 'reorder']);
         Route::post('/admin/homepage-content/upload-video', [HomepageContentController::class, 'uploadVideo']);
         
+        // Admin Settings routes
+        Route::get('/admin/settings', [SettingsController::class, 'index']);
+        Route::put('/admin/settings/maintenance', [SettingsController::class, 'updateMaintenance']);
+
         // Bulk Import Routes
         Route::prefix('import')->group(function () {
             Route::post('/validate', [ImportController::class, 'validateImport']);
