@@ -101,6 +101,9 @@ class ImagesUnifyPaths extends Command
 
     /**
      * البحث عن ملفات صور في كل المواقع القديمة المحتملة ونقلها إلى uploads/images/{cat}/.
+     *
+     * يدعم متغير بيئة اختياري `LEGACY_IMAGES_DIR` (مفصول بـ `;` أو `,` لعدة مسارات)
+     * يسمح بإضافة مجلدات قديمة مركَّبة كـ bind mount مؤقت لاستخراج الصور منها.
      */
     private function migrateFiles(): void
     {
@@ -117,6 +120,18 @@ class ImagesUnifyPaths extends Command
             // مجلدات قديمة في public
             base_path('public/images'),
         ];
+
+        // مسارات إضافية من LEGACY_IMAGES_DIR (مفيد لاستيراد من bind mount مؤقت)
+        $legacy = (string) env('LEGACY_IMAGES_DIR', '');
+        if ($legacy !== '') {
+            foreach (preg_split('/[;,]/', $legacy) as $extra) {
+                $extra = trim($extra);
+                if ($extra !== '') {
+                    $sourceDirs[] = $extra;
+                    $this->line("[legacy-source] {$extra}");
+                }
+            }
+        }
 
         foreach ($sourceDirs as $src) {
             if (!is_dir($src)) {
@@ -153,7 +168,17 @@ class ImagesUnifyPaths extends Command
                 continue;
             }
 
-            $relative = ltrim(str_replace([base_path() . DIRECTORY_SEPARATOR, '\\'], ['', '/'], $sourcePath), '/');
+            // المسار النسبي: من جذر المشروع إن أمكن، وإلا من جذر مصدر المسح.
+            $basePrefix = base_path() . DIRECTORY_SEPARATOR;
+            if (str_starts_with($sourcePath, $basePrefix)) {
+                $relative = substr($sourcePath, strlen($basePrefix));
+            } else {
+                $sourceRoot = rtrim($sourceDir, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR;
+                $relative = str_starts_with($sourcePath, $sourceRoot)
+                    ? substr($sourcePath, strlen($sourceRoot))
+                    : $sourcePath;
+            }
+            $relative = ltrim(str_replace('\\', '/', $relative), '/');
             // مثال: storage/app/public/images/products/sub/file.jpg أو storage/public/file.jpg
             $category = $this->detectCategoryFromPath($relative);
 

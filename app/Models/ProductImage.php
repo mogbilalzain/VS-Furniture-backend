@@ -133,22 +133,43 @@ class ProductImage extends Model
     }
 
     /**
-     * Check if image file exists
+     * Check if image file exists.
+     *
+     * يفحص في كلا المصدرين الذين يخدمهما nginx:
+     *   - /uploads/...  -> base_path('uploads/...')
+     *   - /storage/...  -> storage_path('app/public/...')
+     *
+     * هذا متّسق مع تكوين nginx بعد توحيد المسارات.
      */
     public function imageExists()
     {
-        // For external URLs, assume they exist
-        if (filter_var($this->image_url, FILTER_VALIDATE_URL)) {
+        $value = $this->image_url;
+        if (!$value) {
+            return false;
+        }
+
+        if (filter_var($value, FILTER_VALIDATE_URL)) {
             return true;
         }
 
-        // For local paths starting with '/'
-        if (str_starts_with($this->image_url, '/')) {
-            return file_exists(public_path($this->image_url));
+        $path = ltrim($value, '/');
+
+        if (str_starts_with($path, 'uploads/')) {
+            return is_file(base_path($path));
         }
 
-        // For storage paths
-        return Storage::exists($this->image_url);
+        if (str_starts_with($path, 'storage/')) {
+            $rest = substr($path, strlen('storage/'));
+            return is_file(storage_path('app/public/' . $rest));
+        }
+
+        if (str_starts_with($path, 'images/')) {
+            return is_file(base_path('uploads/' . $path))
+                || is_file(storage_path('app/public/' . $path));
+        }
+
+        return Storage::disk('public')->exists($path)
+            || is_file(public_path($path));
     }
 
     /**
@@ -250,15 +271,23 @@ class ProductImage extends Model
                 }
             }
 
-            // Delete physical file if it exists and is local
+            // حذف الملف الفعلي من المصادر المعروفة (uploads / storage/app/public).
             if (!filter_var($image->image_url, FILTER_VALIDATE_URL)) {
-                if (str_starts_with($image->image_url, '/')) {
-                    $filePath = public_path($image->image_url);
-                    if (file_exists($filePath)) {
-                        unlink($filePath);
-                    }
+                $rel = ltrim((string) $image->image_url, '/');
+                $candidates = [];
+                if (str_starts_with($rel, 'uploads/')) {
+                    $candidates[] = base_path($rel);
+                } elseif (str_starts_with($rel, 'storage/')) {
+                    $candidates[] = storage_path('app/public/' . substr($rel, strlen('storage/')));
                 } else {
-                    Storage::delete($image->image_url);
+                    $candidates[] = base_path('uploads/' . $rel);
+                    $candidates[] = storage_path('app/public/' . $rel);
+                    $candidates[] = public_path($rel);
+                }
+                foreach ($candidates as $fp) {
+                    if (is_file($fp)) {
+                        @unlink($fp);
+                    }
                 }
             }
         });

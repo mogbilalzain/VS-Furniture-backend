@@ -38,7 +38,12 @@ if [ -n "${DB_USERNAME}" ] && [ -n "${DB_DATABASE}" ]; then
     log "DB متاحة (أو انتهى المهلة)."
 fi
 
-# 3) كاش التكوين والمسارات والمشاهد
+# 3) مسح كاش قديم ثم إعادة بنائه
+#    (مهم: عند إعادة البناء بعد تحديث الكود يجب التأكد أن config.php القديم
+#     لا يستخدم بعد الآن. optimize:clear يحذف bootstrap/cache/config.php
+#     وroutes-v7.php وviews/* وكاش الـ events.)
+php artisan optimize:clear || log "optimize:clear فشل (متابعة)."
+
 #    (لا نحتاج storage:link لأن الصور تُخدم من /uploads/ مباشرة)
 php artisan config:cache  || log "config:cache فشل (متابعة)."
 php artisan route:cache   || log "route:cache فشل (متابعة)."
