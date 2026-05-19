@@ -174,40 +174,58 @@ class ProductImageController extends Controller
     }
 
     /**
-     * Update image details
+     * Update image details (metadata and/or replace the physical file)
      */
     public function update(Request $request, $productId, $imageId): JsonResponse
     {
         try {
             $request->validate([
-                'alt_text' => 'sometimes|string|max:255',
-                'title' => 'sometimes|string|max:255',
+                'alt_text'   => 'sometimes|string|max:255',
+                'title'      => 'sometimes|string|max:255',
                 'sort_order' => 'sometimes|integer|min:0',
                 'is_primary' => 'sometimes|boolean',
-                'is_featured' => 'sometimes|boolean',
-                'is_active' => 'sometimes|boolean',
-                'image_type' => 'sometimes|string|in:product,variant,detail,gallery'
+                'is_featured'=> 'sometimes|boolean',
+                'is_active'  => 'sometimes|boolean',
+                'image_type' => 'sometimes|string|in:product,variant,detail,gallery',
+                'image'      => 'sometimes|file|image|mimes:jpeg,png,jpg,gif,webp,svg|max:5120',
             ]);
 
             $image = ProductImage::where('product_id', $productId)
                 ->where('id', $imageId)
                 ->firstOrFail();
 
-            $image->update($request->only([
-                'alt_text', 'title', 'sort_order', 'is_primary', 
-                'is_featured', 'is_active', 'image_type'
-            ]));
+            $updateFields = $request->only([
+                'alt_text', 'title', 'sort_order', 'is_primary',
+                'is_featured', 'is_active', 'image_type',
+            ]);
+
+            if ($request->hasFile('image')) {
+                $result = ImageHelper::uploadImage(
+                    $request->file('image'),
+                    'products',
+                    (string) $productId
+                );
+                if (!$result['success']) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'فشل رفع الصورة: ' . ($result['message'] ?? 'خطأ غير معروف'),
+                    ], 422);
+                }
+                $updateFields['image_url'] = $result['data']['url'];
+            }
+
+            $image->update($updateFields);
 
             return response()->json([
                 'success' => true,
                 'data' => [
-                    'id' => $image->id,
-                    'image_url' => $image->full_image_url,
-                    'alt_text' => $image->alt_text,
-                    'title' => $image->title,
+                    'id'         => $image->id,
+                    'image_url'  => $image->full_image_url,
+                    'alt_text'   => $image->alt_text,
+                    'title'      => $image->title,
                     'sort_order' => $image->sort_order,
                     'is_primary' => $image->is_primary,
-                    'is_featured' => $image->is_featured,
+                    'is_featured'=> $image->is_featured,
                     'image_type' => $image->image_type,
                 ],
                 'message' => 'Image updated successfully'

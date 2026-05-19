@@ -5,7 +5,9 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\ProductResource;
 use App\Models\Product;
+use App\Models\ProductImage;
 use App\Models\Category;
+use App\Helpers\ImageHelper;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Storage;
@@ -233,6 +235,7 @@ class ProductController extends Controller
             'specifications' => 'nullable|array',
             'model' => 'nullable|string|max:255',
             'category_id' => 'required|exists:categories,id',
+            'image' => 'sometimes|nullable',
             'status' => 'nullable|in:active,inactive',
             'is_featured' => 'nullable|boolean',
             'sort_order' => 'nullable|integer|min:0',
@@ -249,13 +252,20 @@ class ProductController extends Controller
             ], 400);
         }
 
-        $productData = $request->all();
-        
-        // Remove property_values from product data (handle separately)
-        $propertyValues = $productData['property_values'] ?? [];
-        unset($productData['property_values']);
+        $productData = $request->except(['property_values', 'image', '_method']);
+        $propertyValues = $request->input('property_values', []);
 
         $product = Product::create($productData);
+
+        // Handle main product image (file upload or URL) by writing to product_images as primary.
+        $imageError = $this->savePrimaryImageFromRequest($request, $product);
+        if ($imageError !== null) {
+            $product->delete();
+            return response()->json([
+                'success' => false,
+                'message' => $imageError,
+            ], 422);
+        }
 
         // Attach property values if provided
         if (!empty($propertyValues)) {
@@ -324,6 +334,7 @@ class ProductController extends Controller
             'specifications' => 'nullable|array',
             'model' => 'nullable|string|max:255',
             'category_id' => 'required|exists:categories,id',
+            'image' => 'sometimes|nullable',
             'status' => 'nullable|in:active,inactive',
             'is_featured' => 'nullable|boolean',
             'sort_order' => 'nullable|integer|min:0',
@@ -339,13 +350,93 @@ class ProductController extends Controller
             ], 400);
         }
 
-        $product->update($request->all());
+        $updateData = $request->except(['property_values', 'image', '_method']);
+        $product->update($updateData);
+
+        // Handle main product image (file upload or URL) by writing to product_images as primary.
+        $imageError = $this->savePrimaryImageFromRequest($request, $product);
+        if ($imageError !== null) {
+            return response()->json([
+                'success' => false,
+                'message' => $imageError,
+            ], 422);
+        }
 
         return response()->json([
             'success' => true,
             'message' => 'Product updated successfully',
-            'data' => new ProductResource($product->load('category'))
+            'data' => new ProductResource($product->load(['category', 'activeImages']))
         ]);
+    }
+
+    /**
+     * Save (create/update) the primary ProductImage from the request.
+     *
+     * Returns null on success, or an Arabic error message on failure.
+     * No-op if neither a file nor a non-empty URL was provided.
+     */
+    private function savePrimaryImageFromRequest(Request $request, Product $product): ?string
+    {
+        $imageUrl = null;
+
+        if ($request->hasFile('image')) {
+            $result = ImageHelper::uploadImage(
+                $request->file('image'),
+                'products',
+                (string) $product->id
+            );
+            if (!$result['success']) {
+                return 'فشل رفع الصورة: ' . ($result['message'] ?? 'خطأ غير معروف');
+            }
+            $imageUrl = $result['data']['url'];
+            $imageData = $result['data'];
+        } elseif ($request->filled('image')) {
+            $imageUrl = ImageHelper::normalizeToUploadsPath($request->input('image'), 'products');
+            $imageData = null;
+        } else {
+            return null;
+        }
+
+        $primary = ProductImage::where('product_id', $product->id)
+            ->where('is_primary', true)
+            ->first();
+
+        if ($primary) {
+            $primary->update([
+                'image_url' => $imageUrl,
+                'metadata'  => isset($imageData) ? [
+                    'width'         => $imageData['dimensions']['width'] ?? null,
+                    'height'        => $imageData['dimensions']['height'] ?? null,
+                    'size'          => $imageData['size'] ?? null,
+                    'mime_type'     => $imageData['mime_type'] ?? null,
+                    'original_name' => $imageData['original_name'] ?? null,
+                    'filename'      => $imageData['filename'] ?? null,
+                    'storage_path'  => $imageData['path'] ?? null,
+                ] : $primary->metadata,
+            ]);
+        } else {
+            ProductImage::create([
+                'product_id' => $product->id,
+                'image_url'  => $imageUrl,
+                'alt_text'   => $product->name,
+                'title'      => $product->name,
+                'is_primary' => true,
+                'is_active'  => true,
+                'image_type' => 'product',
+                'sort_order' => ProductImage::getNextSortOrder($product->id),
+                'metadata'   => isset($imageData) ? [
+                    'width'         => $imageData['dimensions']['width'] ?? null,
+                    'height'        => $imageData['dimensions']['height'] ?? null,
+                    'size'          => $imageData['size'] ?? null,
+                    'mime_type'     => $imageData['mime_type'] ?? null,
+                    'original_name' => $imageData['original_name'] ?? null,
+                    'filename'      => $imageData['filename'] ?? null,
+                    'storage_path'  => $imageData['path'] ?? null,
+                ] : null,
+            ]);
+        }
+
+        return null;
     }
 
     /**
