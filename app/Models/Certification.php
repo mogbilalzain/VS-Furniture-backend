@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Helpers\ImageHelper;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
@@ -19,6 +20,22 @@ class Certification extends Model
     protected $casts = [
         'is_active' => 'boolean',
     ];
+
+    /**
+     * تطبيع image_url إلى رابط مطلق وموحَّد عبر ImageHelper::buildFullUrl.
+     *
+     * يحوّل أي صيغة قديمة (مثل /images/certifications/X.png) إلى
+     * {APP_URL}/uploads/images/certifications/X.png. الروابط المطلقة (http/https)
+     * تمر دون تعديل.
+     */
+    public function getImageUrlAttribute($value)
+    {
+        if (!$value) {
+            return null;
+        }
+
+        return ImageHelper::buildFullUrl($value, 'certifications');
+    }
 
     /**
      * علاقة Many-to-Many مع المنتجات

@@ -1,0 +1,16 @@
+<svg width="100" height="100" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+  <!-- GS Background -->
+  <rect width="100" height="100" fill="#0066CC" rx="10"/>
+  
+  <!-- GS Text -->
+  <text x="50" y="35" font-family="Arial, sans-serif" font-size="20" font-weight="bold" text-anchor="middle" fill="white">GS</text>
+  
+  <!-- Tested Text -->
+  <text x="50" y="55" font-family="Arial, sans-serif" font-size="8" text-anchor="middle" fill="white">TESTED</text>
+  
+  <!-- Safety Text -->
+  <text x="50" y="70" font-family="Arial, sans-serif" font-size="8" text-anchor="middle" fill="white">SAFETY</text>
+  
+  <!-- Check mark -->
+  <path d="M25 75 L35 85 L75 45" stroke="white" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

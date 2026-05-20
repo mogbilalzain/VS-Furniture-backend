@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Certification;
 use App\Models\Product;
+use App\Helpers\ImageHelper;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 
@@ -239,59 +240,35 @@ class CertificationController extends Controller
     }
 
     /**
-     * رفع صورة للشهادة
+     * رفع صورة للشهادة عبر ImageHelper الموحَّد.
      */
     public function uploadImage(Request $request): JsonResponse
     {
-        try {
-            $request->validate([
-                'image' => 'required|image|mimes:jpeg,png,jpg,gif,svg|max:2048'
-            ]);
+        $request->validate([
+            'image' => 'required|image|mimes:jpeg,png,jpg,gif,svg,webp|max:5120',
+        ]);
 
-            if ($request->hasFile('image')) {
-                $image = $request->file('image');
-                $imageName = time() . '_' . uniqid() . '.' . $image->getClientOriginalExtension();
-                
-                // Create certifications directory if it doesn't exist
-                $uploadPath = public_path('images/certifications');
-                if (!file_exists($uploadPath)) {
-                    mkdir($uploadPath, 0755, true);
-                }
-                
-                // Move the uploaded file
-                $image->move($uploadPath, $imageName);
-                
-                // Also copy to Next.js public folder for better integration
-                $nextjsPath = 'C:/Users/HP/Desktop/VS/vs-frontEnd/vs-nextjs/public/images/certifications/';
-                if (!file_exists($nextjsPath)) {
-                    mkdir($nextjsPath, 0755, true);
-                }
-                copy($uploadPath . '/' . $imageName, $nextjsPath . $imageName);
-                
-                // Return local path instead of full URL for better compatibility
-                $imageUrl = '/images/certifications/' . $imageName;
-                
-                return response()->json([
-                    'success' => true,
-                    'data' => [
-                        'image_url' => $imageUrl,
-                        'filename' => $imageName
-                    ],
-                    'message' => 'Image uploaded successfully'
-                ]);
-            }
+        $result = ImageHelper::uploadImage(
+            $request->file('image'),
+            'certifications'
+        );
 
-            return response()->json([
-                'success' => false,
-                'message' => 'No image file provided'
-            ], 400);
-
-        } catch (\Exception $e) {
+        if (!$result['success']) {
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to upload image',
-                'error' => $e->getMessage()
+                'error'   => $result['error'] ?? $result['message'] ?? 'Upload failed',
             ], 500);
         }
+
+        return response()->json([
+            'success' => true,
+            'data'    => [
+                'image_url' => $result['data']['url'],
+                'full_url'  => $result['data']['full_url'],
+                'filename'  => $result['data']['filename'],
+            ],
+            'message' => 'Image uploaded successfully',
+        ]);
     }
 }
