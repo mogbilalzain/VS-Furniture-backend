@@ -111,6 +111,21 @@ class Material extends Model
     }
 
     /**
+     * تطبيع image_url إلى رابط مطلق وموحَّد عبر ImageHelper::buildFullUrl.
+     *
+     * القيمة المخزّنة في قاعدة البيانات تبقى نسبية (/uploads/images/materials/X.jpg)
+     * بينما تُعاد للواجهة كرابط مطلق يعتمد على APP_URL.
+     */
+    public function getImageUrlAttribute($value)
+    {
+        if (!$value) {
+            return null;
+        }
+
+        return \App\Helpers\ImageHelper::buildFullUrl($value, 'materials');
+    }
+
+    /**
      * Get full image URL (handle both local and external URLs).
      *
      * يطبّع المسار إلى `{APP_URL}/uploads/images/materials/...` عبر ImageHelper.
@@ -152,22 +167,33 @@ class Material extends Model
      */
     public function imageExists()
     {
-        if (!$this->image_url) {
+        // نقرأ القيمة الخام لأن accessor يعيد رابطاً مطلقاً دائماً
+        $rawPath = $this->getRawOriginal('image_url');
+
+        if (!$rawPath) {
             return false;
         }
 
         // For external URLs, assume they exist
-        if (filter_var($this->image_url, FILTER_VALIDATE_URL)) {
+        if (filter_var($rawPath, FILTER_VALIDATE_URL)) {
             return true;
         }
 
+        $normalized = \App\Helpers\ImageHelper::normalizeToUploadsPath($rawPath, 'materials');
+
+        if ($normalized && str_starts_with($normalized, '/uploads/')) {
+            return \App\Helpers\ImageHelper::imageExists(
+                ltrim(substr($normalized, strlen('/uploads/')), '/')
+            );
+        }
+
         // For local paths starting with '/'
-        if (str_starts_with($this->image_url, '/')) {
-            return file_exists(public_path($this->image_url));
+        if (str_starts_with($rawPath, '/')) {
+            return file_exists(public_path($rawPath));
         }
 
         // For storage paths
-        return Storage::exists($this->image_url);
+        return Storage::exists($rawPath);
     }
 
     /**
@@ -226,15 +252,28 @@ class Material extends Model
 
         // Delete physical image file when deleting material
         static::deleting(function ($material) {
-            if ($material->image_url && !filter_var($material->image_url, FILTER_VALIDATE_URL)) {
-                if (str_starts_with($material->image_url, '/')) {
-                    $filePath = public_path($material->image_url);
-                    if (file_exists($filePath)) {
-                        unlink($filePath);
-                    }
-                } else {
-                    Storage::delete($material->image_url);
+            // نقرأ القيمة الخام من العمود لأن accessor يعيد رابطاً مطلقاً
+            $rawPath = $material->getRawOriginal('image_url');
+
+            if (!$rawPath || filter_var($rawPath, FILTER_VALIDATE_URL)) {
+                return;
+            }
+
+            $normalized = \App\Helpers\ImageHelper::normalizeToUploadsPath($rawPath, 'materials');
+
+            if ($normalized && str_starts_with($normalized, '/uploads/')) {
+                // المسار داخل قرص uploads يكون بدون البادئة /uploads/
+                \App\Helpers\ImageHelper::deleteImage(ltrim(substr($normalized, strlen('/uploads/')), '/'));
+                return;
+            }
+
+            if (str_starts_with($rawPath, '/')) {
+                $filePath = public_path($rawPath);
+                if (file_exists($filePath)) {
+                    unlink($filePath);
                 }
+            } else {
+                Storage::delete($rawPath);
             }
         });
     }

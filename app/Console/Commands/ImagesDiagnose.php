@@ -27,7 +27,7 @@ class ImagesDiagnose extends Command
     private array $tables = [
         'categories'      => ['table' => 'categories',      'column' => 'image',      'default_category' => 'categories'],
         'product_images'  => ['table' => 'product_images',  'column' => 'image_url',  'default_category' => 'products'],
-        'materials'       => ['table' => 'materials',       'column' => 'image_url',  'default_category' => 'products'],
+        'materials'       => ['table' => 'materials',       'column' => 'image_url',  'default_category' => 'materials'],
         'certifications'  => ['table' => 'certifications',  'column' => 'image_url',  'default_category' => 'certifications'],
         'solutions'       => ['table' => 'solutions',       'column' => 'cover_image','default_category' => 'solutions'],
         'solution_images' => ['table' => 'solution_images', 'column' => 'image_path', 'default_category' => 'solutions'],

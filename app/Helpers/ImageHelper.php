@@ -25,7 +25,8 @@ class ImageHelper
         'products',
         'categories', 
         'solutions',
-        'certifications'
+        'certifications',
+        'materials'
     ];
 
     /**

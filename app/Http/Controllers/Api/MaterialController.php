@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Helpers\ImageHelper;
 use App\Http\Controllers\Controller;
 use App\Models\Material;
 use App\Models\MaterialGroup;
@@ -117,7 +118,11 @@ class MaterialController extends Controller
             }
 
             $data = $request->only(['group_id', 'code', 'name', 'description', 'color_hex', 'image_url', 'sort_order', 'is_active']);
-            
+
+            if (array_key_exists('image_url', $data)) {
+                $data['image_url'] = $this->normalizeImageUrl($data['image_url']);
+            }
+
             // Set default sort order if not provided
             if (!isset($data['sort_order'])) {
                 $data['sort_order'] = Material::getNextSortOrder($data['group_id']);
@@ -192,6 +197,11 @@ class MaterialController extends Controller
             }
 
             $data = $request->only(['group_id', 'code', 'name', 'description', 'color_hex', 'image_url', 'sort_order', 'is_active']);
+
+            if (array_key_exists('image_url', $data)) {
+                $data['image_url'] = $this->normalizeImageUrl($data['image_url']);
+            }
+
             $material->update($data);
             $material->load(['group.category']);
 
@@ -250,7 +260,7 @@ class MaterialController extends Controller
     {
         try {
             $validator = Validator::make($request->all(), [
-                'image' => 'required|image|mimes:jpeg,png,jpg,gif,svg,webp|max:2048',
+                'image' => 'required|image|mimes:jpeg,png,jpg,gif,svg,webp|max:5120',
             ]);
 
             if ($validator->fails()) {
@@ -261,28 +271,22 @@ class MaterialController extends Controller
                 ], 422);
             }
 
-            $image = $request->file('image');
-            $imageName = time() . '_' . Str::random(10) . '.' . $image->getClientOriginalExtension();
-            
-            // Store in Laravel storage
-            $storagePath = $image->storeAs('materials', $imageName, 'public');
-            
-            // Also copy to Next.js public directory
-            $nextjsPath = '../vs-nextjs/public/images/materials/';
-            if (!file_exists($nextjsPath)) {
-                mkdir($nextjsPath, 0755, true);
+            $result = ImageHelper::uploadImage($request->file('image'), 'materials');
+
+            if (!$result['success']) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Failed to upload image',
+                    'error' => $result['error'] ?? $result['message'] ?? 'Upload failed',
+                ], 500);
             }
-            
-            $image->move($nextjsPath, $imageName);
-            
-            // Return local path that Next.js can resolve
-            $imageUrl = '/images/materials/' . $imageName;
 
             return response()->json([
                 'success' => true,
                 'data' => [
-                    'image_url' => $imageUrl,
-                    'storage_path' => $storagePath
+                    'image_url' => $result['data']['url'],
+                    'full_url' => $result['data']['full_url'],
+                    'filename' => $result['data']['filename'],
                 ],
                 'message' => 'Image uploaded successfully'
             ]);
@@ -294,5 +298,25 @@ class MaterialController extends Controller
                 'error' => $e->getMessage()
             ], 500);
         }
+    }
+
+    /**
+     * تطبيع قيمة image_url القادمة من الواجهة إلى مسار نسبي تحت /uploads/images/materials.
+     *
+     * يزيل الدومين إن كان مطابقاً لـ APP_URL حتى تبقى القيمة المخزّنة في قاعدة
+     * البيانات بدون دومين، فتعمل في localhost والإنتاج معاً.
+     */
+    private function normalizeImageUrl(?string $value): ?string
+    {
+        if ($value === null || $value === '') {
+            return $value;
+        }
+
+        $appUrl = rtrim((string) config('app.url'), '/');
+        if ($appUrl !== '' && str_starts_with($value, $appUrl)) {
+            $value = substr($value, strlen($appUrl));
+        }
+
+        return ImageHelper::normalizeToUploadsPath($value, 'materials');
     }
 }
